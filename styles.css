@@ -45,6 +45,11 @@ label { display:flex; flex-direction:column; gap:7px; margin-bottom:14px; font-w
 .credential dl { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .loan-form, .mongo-form { max-width:760px; }
 .notice { margin-top:16px; max-width:760px; color:var(--wine); font-weight:700; }
+.approval-card { margin-top:20px; }
+.pending-users { display:flex; flex-direction:column; gap:10px; }
+.pending-user { display:flex; align-items:center; justify-content:space-between; gap:16px; border:1px solid var(--sand); border-radius:10px; padding:12px; }
+.pending-user div { display:flex; flex-direction:column; }
+.pending-user small { color:var(--gold); margin-top:4px; }
 dialog { border:0; padding:0; background:transparent; }
 dialog::backdrop { background:rgba(48,39,43,.72); }
 .login-card { width:min(380px,calc(100vw - 32px)); }

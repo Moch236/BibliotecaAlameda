@@ -14,7 +14,6 @@
         <button class="nav-item active" data-section="catalog">Catálogo</button>
         <button class="nav-item" data-section="users">Usuarios</button>
         <button class="nav-item" data-section="loans">Préstamos</button>
-        <button class="nav-item" data-section="database">MongoDB Atlas</button>
       </nav>
     </aside>
 
@@ -44,17 +43,27 @@
             <label>Correo electrónico <input name="email" type="email"></label>
             <div class="grid-two"><label>Ocupación <input name="occupation"></label><label>Escuela o Trabajo <input name="workplace"></label></div>
             <label>Documento de identificación oficial <input name="idDocument" required></label>
-            <label>Comprobante de domicilio <input name="addressProof" type="file"></label>
+            <label>Comprobante de domicilio (INE)
+              <select name="addressProofType" required>
+                <option value="INE">INE</option>
+              </select>
+            </label>
+            <label>Archivo del comprobante INE <input name="addressProof" type="file" accept=".pdf,image/jpeg,image/png" required></label>
             <label>Fotografía <input name="photo" type="file" accept="image/*"></label>
             <label>Contacto de emergencia <input name="emergencyContact"></label>
-            <button class="primary" type="submit">Crear usuario y credencial</button>
+            <button class="primary" type="submit">Solicitar creación de usuario</button>
           </form>
           <article class="credential card" id="credential" aria-live="polite">
             <p class="eyebrow">Credencial digital</p>
             <div class="credential-head"><div class="avatar">BA</div><div><h2 id="credentialName">Usuario nuevo</h2><strong id="credentialNumber">BA—</strong></div></div>
-            <dl id="credentialData"><dt>Datos</dt><dd>Complete el formulario para generar la credencial.</dd></dl>
+            <dl id="credentialData"><dt>Datos</dt><dd>Complete el formulario y espere la aprobación del administrador.</dd></dl>
           </article>
         </div>
+        <section class="card approval-card">
+          <h2>Aprobaciones de administradores</h2>
+          <p>Los usuarios pendientes no tendrán credencial hasta ser aprobados.</p>
+          <div id="pendingUsers" class="pending-users" aria-live="polite"></div>
+        </section>
       </section>
 
       <section class="view" id="loans">
@@ -71,16 +80,6 @@
         <div id="loanResult" class="notice" aria-live="polite"></div>
       </section>
 
-      <section class="view" id="database">
-        <form class="card mongo-form" id="mongoForm">
-          <h2>Conexión a MongoDB Atlas</h2>
-          <p>Configure una instancia para persistir usuarios y préstamos.</p>
-          <label>URI de conexión <input name="uri" type="password" placeholder="mongodb+srv://usuario:contraseña@cluster.mongodb.net" required></label>
-          <label>Base de datos <input name="database" value="biblioteca_alameda"></label>
-          <button class="primary" type="submit">Conectar</button>
-        </form>
-        <div id="mongoStatus" class="notice" aria-live="polite"></div>
-      </section>
     </section>
   </main>
 

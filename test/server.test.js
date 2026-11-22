@@ -23,11 +23,33 @@ test("creates a digital member credential", async () => {
   const response = await fetch(`http://127.0.0.1:${port}/api/users`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fullName: "Ana López", address: "Centro", idDocument: "INE-123" })
+    body: JSON.stringify({ fullName: "Ana López", address: "Centro", idDocument: "INE-123", addressProofType: "INE", addressProof: "ine.pdf" })
   });
   const user = await response.json();
   assert.equal(response.status, 201);
-  assert.match(user.credentialNumber, /^BA-/);
+  assert.equal(user.status, "pending");
+  assert.equal(user.credentialNumber, null);
+  const pending = await fetch(`http://127.0.0.1:${port}/api/users/pending`);
+  assert.equal((await pending.json()).length, 1);
+  const approval = await fetch(`http://127.0.0.1:${port}/api/users/${user.id}/approve`, { method: "POST" });
+  const approved = await approval.json();
+  assert.equal(approval.status, 200);
+  assert.equal(approved.status, "approved");
+  assert.match(approved.credentialNumber, /^BA-/);
+  server.close();
+});
+
+test("rejects address proof that is not INE", async () => {
+  const server = createServer().listen(0);
+  await new Promise(resolve => server.once("listening", resolve));
+  const port = server.address().port;
+  const response = await fetch(`http://127.0.0.1:${port}/api/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fullName: "Ana López", address: "Centro", idDocument: "INE-123", addressProofType: "recibo", addressProof: "recibo.pdf" })
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "El comprobante de domicilio debe ser una INE");
   server.close();
 });
 

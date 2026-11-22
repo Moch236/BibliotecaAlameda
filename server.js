@@ -72,11 +72,32 @@ async function handleApi(req, res, url) {
       if (!body.fullName || !body.idDocument || !body.address) {
         return sendJson(res, 400, { error: "El nombre completo, documento y domicilio son obligatorios" });
       }
-      const user = { id: crypto.randomUUID(), ...body, credentialNumber: `BA-${Date.now().toString().slice(-8)}` };
+      if (body.addressProofType !== "INE" || !body.addressProof) {
+        return sendJson(res, 400, { error: "El comprobante de domicilio debe ser una INE" });
+      }
+      const user = { id: crypto.randomUUID(), ...body, status: "pending", credentialNumber: null };
       users.push(user);
       if (mongoDb) await mongoDb.collection("users").insertOne(user);
       return sendJson(res, 201, user);
     } catch (error) { return sendJson(res, 400, { error: error.message }); }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/users/pending") {
+    return sendJson(res, 200, users.filter(user => user.status === "pending"));
+  }
+
+  const approvalMatch = url.pathname.match(/^\/api\/users\/([^/]+)\/approve$/);
+  if (req.method === "POST" && approvalMatch) {
+    const user = users.find(item => item.id === decodeURIComponent(approvalMatch[1]));
+    if (!user) return sendJson(res, 404, { error: "Usuario no encontrado" });
+    if (user.status === "approved") return sendJson(res, 200, user);
+    user.status = "approved";
+    user.credentialNumber = `BA-${Date.now().toString().slice(-8)}`;
+    if (mongoDb) await mongoDb.collection("users").updateOne(
+      { id: user.id },
+      { $set: { status: "approved", credentialNumber: user.credentialNumber } }
+    );
+    return sendJson(res, 200, user);
   }
 
   if (req.method === "POST" && url.pathname === "/api/loans") {
