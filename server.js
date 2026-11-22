@@ -12,6 +12,7 @@ const catalog = [
 const users = [];
 const loans = [];
 let mongoClient = null;
+let mongoDb = null;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -45,7 +46,8 @@ async function connectMongo(uri, databaseName) {
   if (mongoClient) await mongoClient.close();
   mongoClient = new MongoClient(uri);
   await mongoClient.connect();
-  return mongoClient.db(databaseName || "biblioteca_alameda");
+  mongoDb = mongoClient.db(databaseName || "biblioteca_alameda");
+  return mongoDb;
 }
 
 async function handleApi(req, res, url) {
@@ -72,6 +74,7 @@ async function handleApi(req, res, url) {
       }
       const user = { id: crypto.randomUUID(), ...body, credentialNumber: `BA-${Date.now().toString().slice(-8)}` };
       users.push(user);
+      if (mongoDb) await mongoDb.collection("users").insertOne(user);
       return sendJson(res, 201, user);
     } catch (error) { return sendJson(res, 400, { error: error.message }); }
   }
@@ -84,6 +87,7 @@ async function handleApi(req, res, url) {
       }
       const loan = { id: crypto.randomUUID(), ...body };
       loans.push(loan);
+      if (mongoDb) await mongoDb.collection("loans").insertOne(loan);
       return sendJson(res, 201, loan);
     } catch (error) { return sendJson(res, 400, { error: error.message }); }
   }

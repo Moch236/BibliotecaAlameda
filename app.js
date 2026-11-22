@@ -62,7 +62,6 @@ document.getElementById("userForm").addEventListener("submit", async event => {
 });
 
 document.getElementById("loanForm").addEventListener("submit", async event => {
-  event.preventEvent?.();
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget));
   try {
