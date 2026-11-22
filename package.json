@@ -1,0 +1,13 @@
+{
+  "name": "biblioteca-alameda",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aplicación de biblioteca y préstamos",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "mongodb": "^6.12.0"
+  }
+}

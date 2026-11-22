@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Biblioteca Alameda</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span>BA</span><div><strong>Biblioteca</strong><small>Alameda</small></div></div>
+      <nav aria-label="Secciones principales">
+        <button class="nav-item active" data-section="catalog">Catálogo</button>
+        <button class="nav-item" data-section="users">Usuarios</button>
+        <button class="nav-item" data-section="loans">Préstamos</button>
+        <button class="nav-item" data-section="database">MongoDB Atlas</button>
+      </nav>
+    </aside>
+
+    <section class="content">
+      <header class="topbar">
+        <div><p class="eyebrow">Sistema de biblioteca</p><h1 id="pageTitle">Consulta de libros</h1></div>
+        <button class="profile" id="logoutButton" type="button">Cerrar sesión</button>
+      </header>
+
+      <section class="view active" id="catalog">
+        <form class="search-card" id="searchForm">
+          <label for="searchField">Buscar por</label>
+          <select id="searchField"><option value="title">Título</option><option value="author">Autor</option><option value="classifier">Clasificador</option></select>
+          <input id="searchQuery" type="search" placeholder="Escriba su consulta" aria-label="Consulta">
+          <button class="primary" type="submit">Consultar</button>
+        </form>
+        <div class="results" id="catalogResults" aria-live="polite"></div>
+      </section>
+
+      <section class="view" id="users">
+        <div class="grid-two">
+          <form class="card" id="userForm">
+            <h2>Crear usuario</h2>
+            <label>Nombre completo <input name="fullName" required></label>
+            <label>Domicilio <input name="address" required></label>
+            <div class="grid-two"><label>Código Postal <input name="postalCode"></label><label>Teléfono <input name="phone"></label></div>
+            <label>Correo electrónico <input name="email" type="email"></label>
+            <div class="grid-two"><label>Ocupación <input name="occupation"></label><label>Escuela o Trabajo <input name="workplace"></label></div>
+            <label>Documento de identificación oficial <input name="idDocument" required></label>
+            <label>Comprobante de domicilio <input name="addressProof" type="file"></label>
+            <label>Fotografía <input name="photo" type="file" accept="image/*"></label>
+            <label>Contacto de emergencia <input name="emergencyContact"></label>
+            <button class="primary" type="submit">Crear usuario y credencial</button>
+          </form>
+          <article class="credential card" id="credential" aria-live="polite">
+            <p class="eyebrow">Credencial digital</p>
+            <div class="credential-head"><div class="avatar">BA</div><div><h2 id="credentialName">Usuario nuevo</h2><strong id="credentialNumber">BA—</strong></div></div>
+            <dl id="credentialData"><dt>Datos</dt><dd>Complete el formulario para generar la credencial.</dd></dl>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="loans">
+        <form class="card loan-form" id="loanForm">
+          <h2>Solicitud de préstamo</h2>
+          <label>Título del libro <input name="title" required></label>
+          <div class="grid-two">
+            <label>Fecha de préstamo <input name="loanDate" type="date" required></label>
+            <label>Fecha de retorno <input name="returnDate" type="date" required></label>
+          </div>
+          <label>Número de biblioteca <input name="libraryNumber" required placeholder="Ej. BA-00125"></label>
+          <button class="primary" type="submit">Generar solicitud</button>
+        </form>
+        <div id="loanResult" class="notice" aria-live="polite"></div>
+      </section>
+
+      <section class="view" id="database">
+        <form class="card mongo-form" id="mongoForm">
+          <h2>Conexión a MongoDB Atlas</h2>
+          <p>Configure una instancia para persistir usuarios y préstamos.</p>
+          <label>URI de conexión <input name="uri" type="password" placeholder="mongodb+srv://usuario:contraseña@cluster.mongodb.net" required></label>
+          <label>Base de datos <input name="database" value="biblioteca_alameda"></label>
+          <button class="primary" type="submit">Conectar</button>
+        </form>
+        <div id="mongoStatus" class="notice" aria-live="polite"></div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="loginDialog">
+    <form method="dialog" id="loginForm" class="card login-card">
+      <div class="brand centered"><span>BA</span><div><strong>Biblioteca</strong><small>Alameda</small></div></div>
+      <h2>Acceso al sistema</h2>
+      <label>Usuario <input name="username" required></label>
+      <label>Contraseña <input name="password" type="password" required></label>
+      <button class="primary" type="submit" value="login">Ingresar</button>
+    </form>
+  </dialog>
+  <script src="/app.js"></script>
+</body>
+</html>
