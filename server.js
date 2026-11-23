@@ -2,6 +2,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+require("dotenv").config();
 
 const ROOT = __dirname;
 const catalog = [
@@ -51,6 +52,13 @@ async function connectMongo(uri, databaseName) {
 }
 
 async function handleApi(req, res, url) {
+  if (req.method === "GET" && url.pathname === "/api/mongo/status") {
+    return sendJson(res, 200, {
+      connected: Boolean(mongoDb),
+      database: mongoDb?.databaseName || null
+    });
+  }
+
   if (req.method === "GET" && url.pathname === "/api/catalog") {
     const field = url.searchParams.get("field");
     const query = (url.searchParams.get("query") || "").trim().toLowerCase();
@@ -144,7 +152,28 @@ function createServer() {
 
 if (require.main === module) {
   const port = Number(process.env.PORT) || 3000;
-  createServer().listen(port, () => console.log(`Biblioteca Alameda disponible en http://localhost:${port}`));
+  const startServer = async () => {
+    if (process.env.MONGODB_URI) {
+      try {
+        const db = await connectMongo(
+          process.env.MONGODB_URI,
+          process.env.MONGODB_DATABASE || "biblioteca_alameda"
+        );
+        await db.admin().ping();
+        console.log(`MongoDB conectado a la base ${db.databaseName}`);
+      } catch (error) {
+        console.error(`No se pudo conectar a MongoDB: ${error.message}`);
+      }
+    } else {
+      console.warn("MONGODB_URI no esta configurada en el archivo .env");
+    }
+
+    createServer().listen(port, () => {
+      console.log(`Biblioteca Alameda disponible en http://localhost:${port}`);
+    });
+  };
+
+  startServer();
 }
 
 module.exports = { createServer, catalog };
