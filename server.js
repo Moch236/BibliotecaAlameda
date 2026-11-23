@@ -53,6 +53,7 @@ const typeDefs = `#graphql
     loanDate: String!
     returnDate: String!
     libraryNumber: String!
+    status: String
   }
 
   type MongoStatus {
@@ -85,18 +86,69 @@ const typeDefs = `#graphql
     loanDate: String!
     returnDate: String!
     libraryNumber: String!
+    status: String
+  }
+
+  input BookInput {
+    title: String!
+    author: String!
+    classifier: String!
+    total: Int!
+    volume: String
+    location: String
+  }
+
+  input UpdateBookInput {
+    title: String
+    author: String
+    classifier: String
+    total: Int
+    volume: String
+    location: String
+  }
+
+  input UpdateUserInput {
+    fullName: String
+    idDocument: String
+    address: String
+    postalCode: String
+    phone: String
+    email: String
+    occupation: String
+    workplace: String
+    addressProofType: String
+    addressProof: String
+    photo: String
+    emergencyContact: String
+  }
+
+  input UpdateLoanInput {
+    title: String
+    loanDate: String
+    returnDate: String
+    libraryNumber: String
+    status: String
   }
 
   type Query {
     books(field: String, query: String): [Book!]!
     pendingUsers: [User!]!
+    users(limit: Int): [User!]!
+    loans(limit: Int): [Loan!]!
     mongoStatus: MongoStatus!
   }
 
   type Mutation {
     createUser(input: UserInput!): User!
     approveUser(id: ID!): User!
+    updateUser(id: ID!, input: UpdateUserInput!): User!
+    deleteUser(id: ID!): MutationResult!
     createLoan(input: LoanInput!): Loan!
+    updateLoan(id: ID!, input: UpdateLoanInput!): Loan!
+    deleteLoan(id: ID!): MutationResult!
+    createBook(input: BookInput!): Book!
+    updateBook(id: ID!, input: UpdateBookInput!): Book!
+    deleteBook(id: ID!): MutationResult!
   }
 `;
 
@@ -120,6 +172,12 @@ const resolvers = {
     pendingUsers: async () => mongoDb
       ? mongoDb.collection("users").find({ status: "pending" }).toArray()
       : users.filter(user => user.status === "pending"),
+    users: async (_parent, args) => mongoDb
+      ? mongoDb.collection("users").find({}).limit(args.limit || 100).toArray()
+      : users.slice(0, args.limit || 100),
+    loans: async (_parent, args) => mongoDb
+      ? mongoDb.collection("loans").find({}).limit(args.limit || 100).toArray()
+      : loans.slice(0, args.limit || 100),
     mongoStatus: () => ({
       connected: mongoConnected,
       database: mongoConnected ? mongoDb?.databaseName || null : null
@@ -160,10 +218,73 @@ const resolvers = {
       if (!input.title || !input.loanDate || !input.returnDate || !input.libraryNumber) {
         throw new Error("Complete todos los datos de la solicitud");
       }
-      const loan = { id: crypto.randomUUID(), ...input };
+      const loan = { id: crypto.randomUUID(), ...input, status: input.status || "active" };
       loans.push(loan);
       if (mongoDb) await mongoDb.collection("loans").insertOne(loan);
       return loan;
+    },
+    updateUser: async (_parent, { id, input }) => {
+      let user = users.find(item => item.id === id);
+      if (!user && mongoDb) user = await mongoDb.collection("users").findOne({ id });
+      if (!user) throw new Error("Usuario no encontrado");
+      Object.assign(user, input);
+      if (mongoDb) await mongoDb.collection("users").updateOne({ id }, { $set: input });
+      return user;
+    },
+    deleteUser: async (_parent, { id }) => {
+      const inMemoryIndex = users.findIndex(item => item.id === id);
+      if (inMemoryIndex >= 0) users.splice(inMemoryIndex, 1);
+      let deleted = inMemoryIndex >= 0;
+      if (mongoDb) {
+        const result = await mongoDb.collection("users").deleteOne({ id });
+        deleted = deleted || result.deletedCount > 0;
+      }
+      return { ok: deleted, message: deleted ? "Usuario eliminado" : "Usuario no encontrado" };
+    },
+    updateLoan: async (_parent, { id, input }) => {
+      let loan = loans.find(item => item.id === id);
+      if (!loan && mongoDb) loan = await mongoDb.collection("loans").findOne({ id });
+      if (!loan) throw new Error("Préstamo no encontrado");
+      Object.assign(loan, input);
+      if (mongoDb) await mongoDb.collection("loans").updateOne({ id }, { $set: input });
+      return loan;
+    },
+    deleteLoan: async (_parent, { id }) => {
+      const inMemoryIndex = loans.findIndex(item => item.id === id);
+      if (inMemoryIndex >= 0) loans.splice(inMemoryIndex, 1);
+      let deleted = inMemoryIndex >= 0;
+      if (mongoDb) {
+        const result = await mongoDb.collection("loans").deleteOne({ id });
+        deleted = deleted || result.deletedCount > 0;
+      }
+      return { ok: deleted, message: deleted ? "Préstamo eliminado" : "Préstamo no encontrado" };
+    },
+    createBook: async (_parent, { input }) => {
+      if (!input.title || !input.author || !input.classifier) {
+        throw new Error("Complete título, autor y clasificador");
+      }
+      const book = { id: `BOOK-${crypto.randomUUID()}`, ...input };
+      catalog.push(book);
+      if (mongoDb) await mongoDb.collection("books").insertOne(book);
+      return book;
+    },
+    updateBook: async (_parent, { id, input }) => {
+      let book = catalog.find(item => item.id === id);
+      if (!book && mongoDb) book = await mongoDb.collection("books").findOne({ id });
+      if (!book) throw new Error("Libro no encontrado");
+      Object.assign(book, input);
+      if (mongoDb) await mongoDb.collection("books").updateOne({ id }, { $set: input });
+      return book;
+    },
+    deleteBook: async (_parent, { id }) => {
+      const inMemoryIndex = catalog.findIndex(item => item.id === id);
+      if (inMemoryIndex >= 0) catalog.splice(inMemoryIndex, 1);
+      let deleted = inMemoryIndex >= 0;
+      if (mongoDb) {
+        const result = await mongoDb.collection("books").deleteOne({ id });
+        deleted = deleted || result.deletedCount > 0;
+      }
+      return { ok: deleted, message: deleted ? "Libro eliminado" : "Libro no encontrado" };
     }
   }
 };

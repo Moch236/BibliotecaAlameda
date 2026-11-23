@@ -30,6 +30,20 @@
           <input id="searchQuery" type="search" placeholder="Escriba su consulta" aria-label="Consulta">
           <button class="primary" type="submit">Consultar</button>
         </form>
+        <form class="card compact-form" id="bookForm">
+          <h2>Agregar libro</h2>
+          <div class="grid-four">
+            <label>Título <input name="title" required></label>
+            <label>Autor <input name="author" required></label>
+            <label>Clasificador <input name="classifier" required></label>
+            <label>Ejemplares <input name="total" type="number" min="1" value="1" required></label>
+          </div>
+          <div class="grid-two">
+            <label>Volumen <input name="volume"></label>
+            <label>Ubicación <input name="location"></label>
+          </div>
+          <button class="primary" type="submit">Agregar al catálogo</button>
+        </form>
         <div class="results" id="catalogResults" aria-live="polite"></div>
       </section>
 
@@ -64,6 +78,10 @@
           <p>Los usuarios pendientes no tendrán credencial hasta ser aprobados.</p>
           <div id="pendingUsers" class="pending-users" aria-live="polite"></div>
         </section>
+        <section class="card approval-card">
+          <h2>Usuarios registrados</h2>
+          <div id="userList" class="data-list" aria-live="polite"></div>
+        </section>
       </section>
 
       <section class="view" id="loans">
@@ -78,6 +96,10 @@
           <button class="primary" type="submit">Generar solicitud</button>
         </form>
         <div id="loanResult" class="notice" aria-live="polite"></div>
+        <section class="card approval-card">
+          <h2>Préstamos registrados</h2>
+          <div id="loanList" class="data-list" aria-live="polite"></div>
+        </section>
       </section>
 
     </section>

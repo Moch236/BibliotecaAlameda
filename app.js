@@ -54,7 +54,36 @@ async function searchCatalog(event) {
       <p><strong>Total de ejemplares:</strong> ${book.total}</p>
       <p><strong>Volumen:</strong> ${book.volume}</p>
       <p><strong>Ubicación:</strong> ${book.location}</p>
+      <div class="row-actions">
+        <button class="secondary edit-book" type="button" data-book-id="${book.id}">Editar</button>
+        <button class="danger delete-book" type="button" data-book-id="${book.id}">Eliminar</button>
+      </div>
     </article>`).join("") : "<p>No se encontraron libros.</p>";
+  container.querySelectorAll(".edit-book").forEach(button => {
+    button.addEventListener("click", async () => {
+      const id = button.dataset.bookId;
+      const article = button.closest(".book");
+      const title = prompt("Título", article.querySelector("h3").textContent);
+      if (!title) return;
+      const author = prompt("Autor", article.children[1].textContent.replace("Autor:", "").trim());
+      if (!author) return;
+      try {
+        await graphqlRequest(`mutation UpdateBook($id: ID!, $input: UpdateBookInput!) { updateBook(id: $id, input: $input) { id } }`, {
+          id, input: { title, author }
+        });
+        await searchCatalog({ preventDefault() {} });
+      } catch (error) { alert(error.message); }
+    });
+  });
+  container.querySelectorAll(".delete-book").forEach(button => {
+    button.addEventListener("click", async () => {
+      if (!confirm("¿Eliminar este libro del catálogo?")) return;
+      try {
+        await graphqlRequest(`mutation DeleteBook($id: ID!) { deleteBook(id: $id) { ok message } }`, { id: button.dataset.bookId });
+        await searchCatalog({ preventDefault() {} });
+      } catch (error) { alert(error.message); }
+    });
+  });
 }
 
 document.getElementById("searchForm").addEventListener("submit", event => {
@@ -62,6 +91,20 @@ document.getElementById("searchForm").addEventListener("submit", event => {
 });
 document.getElementById("catalogResults").innerHTML = "";
 searchCatalog({ preventDefault() {} }).catch(() => {});
+
+document.getElementById("bookForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.currentTarget));
+  data.total = Number(data.total);
+  try {
+    await graphqlRequest(`
+      mutation CreateBook($input: BookInput!) {
+        createBook(input: $input) { id title }
+      }`, { input: data });
+    event.currentTarget.reset();
+    await searchCatalog({ preventDefault() {} });
+  } catch (error) { alert(error.message); }
+});
 
 document.getElementById("userForm").addEventListener("submit", async event => {
   event.preventDefault();
@@ -103,6 +146,45 @@ async function loadPendingUsers() {
       pendingUsers {
         id fullName addressProofType addressProof
       }
+
+      async function loadUsers() {
+        const data = await graphqlRequest(`
+          query Users {
+            users(limit: 100) {
+              id fullName email address status credentialNumber
+            }
+          }`);
+        const container = document.getElementById("userList");
+        container.innerHTML = data.users.length ? data.users.map(user => `
+          <article class="data-row">
+            <div><strong>${user.fullName}</strong><small>${user.email || "Sin correo"} - ${user.status}</small></div>
+            <div class="row-actions">
+              <button class="secondary edit-user" type="button" data-user-id="${user.id}">Editar</button>
+              <button class="danger delete-user" type="button" data-user-id="${user.id}">Eliminar</button>
+            </div>
+          </article>`).join("") : "<p>No hay usuarios registrados.</p>";
+        container.querySelectorAll(".edit-user").forEach(button => {
+          button.addEventListener("click", async () => {
+            const fullName = prompt("Nombre completo");
+            if (!fullName) return;
+            try {
+              await graphqlRequest(`mutation UpdateUser($id: ID!, $input: UpdateUserInput!) { updateUser(id: $id, input: $input) { id } }`, {
+                id: button.dataset.userId, input: { fullName }
+              });
+              await Promise.all([loadUsers(), loadPendingUsers()]);
+            } catch (error) { alert(error.message); }
+          });
+        });
+        container.querySelectorAll(".delete-user").forEach(button => {
+          button.addEventListener("click", async () => {
+            if (!confirm("¿Eliminar este usuario?")) return;
+            try {
+              await graphqlRequest(`mutation DeleteUser($id: ID!) { deleteUser(id: $id) { ok message } }`, { id: button.dataset.userId });
+              await Promise.all([loadUsers(), loadPendingUsers()]);
+            } catch (error) { alert(error.message); }
+          });
+        });
+      }
     }`);
   const users = data.pendingUsers;
   container.innerHTML = users.length ? users.map(user => `
@@ -128,6 +210,9 @@ async function loadPendingUsers() {
 loadPendingUsers().catch(error => {
   document.getElementById("pendingUsers").textContent = error.message;
 });
+loadUsers().catch(error => {
+  document.getElementById("userList").textContent = error.message;
+});
 
 document.getElementById("loanForm").addEventListener("submit", async event => {
   event.preventDefault();
@@ -142,7 +227,52 @@ document.getElementById("loanForm").addEventListener("submit", async event => {
     const loan = result.createLoan;
     document.getElementById("loanResult").textContent =
       `Solicitud ${loan.id.slice(0, 8)} generada: «${loan.title}», préstamo ${loan.loanDate}, retorno ${loan.returnDate}, número ${loan.libraryNumber}.`;
+    event.currentTarget.reset();
+    await loadLoans();
   } catch (error) { alert(error.message); }
+});
+
+async function loadLoans() {
+  const data = await graphqlRequest(`
+    query Loans {
+      loans(limit: 100) {
+        id title loanDate returnDate libraryNumber status
+      }
+    }`);
+  const container = document.getElementById("loanList");
+  container.innerHTML = data.loans.length ? data.loans.map(loan => `
+    <article class="data-row">
+      <div><strong>${loan.title}</strong><small>${loan.libraryNumber} - ${loan.status || "active"} - ${loan.loanDate} a ${loan.returnDate}</small></div>
+      <div class="row-actions">
+        <button class="secondary edit-loan" type="button" data-loan-id="${loan.id}">Editar</button>
+        <button class="danger delete-loan" type="button" data-loan-id="${loan.id}">Eliminar</button>
+      </div>
+    </article>`).join("") : "<p>No hay préstamos registrados.</p>";
+  container.querySelectorAll(".edit-loan").forEach(button => {
+    button.addEventListener("click", async () => {
+      const status = prompt("Estado (active, returned)", "returned");
+      if (!status) return;
+      try {
+        await graphqlRequest(`mutation UpdateLoan($id: ID!, $input: UpdateLoanInput!) { updateLoan(id: $id, input: $input) { id } }`, {
+          id: button.dataset.loanId, input: { status }
+        });
+        await loadLoans();
+      } catch (error) { alert(error.message); }
+    });
+  });
+  container.querySelectorAll(".delete-loan").forEach(button => {
+    button.addEventListener("click", async () => {
+      if (!confirm("¿Eliminar este préstamo?")) return;
+      try {
+        await graphqlRequest(`mutation DeleteLoan($id: ID!) { deleteLoan(id: $id) { ok message } }`, { id: button.dataset.loanId });
+        await loadLoans();
+      } catch (error) { alert(error.message); }
+    });
+  });
+}
+
+loadLoans().catch(error => {
+  document.getElementById("loanList").textContent = error.message;
 });
 
 const loginDialog = document.getElementById("loginDialog");

@@ -91,3 +91,37 @@ test("creates a loan request", async () => {
   assert.equal(loan.libraryNumber, "BA-00125");
   server.close();
 });
+
+test("supports book create and delete through GraphQL", async () => {
+  const app = await createServer();
+  const server = app.listen(0);
+  await new Promise(resolve => server.once("listening", resolve));
+  const port = server.address().port;
+  const createResponse = await fetch(`http://127.0.0.1:${port}/graphql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: `mutation CreateBook($input: BookInput!) {
+        createBook(input: $input) { id title author }
+      }`,
+      variables: { input: { title: "Libro CRUD", author: "Equipo", classifier: "000 TEST", total: 2, volume: "I", location: "A-01" } }
+    })
+  });
+  const created = await createResponse.json();
+  assert.equal(created.errors, undefined);
+  assert.equal(created.data.createBook.title, "Libro CRUD");
+  const deleteResponse = await fetch(`http://127.0.0.1:${port}/graphql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: `mutation DeleteBook($id: ID!) {
+        deleteBook(id: $id) { ok message }
+      }`,
+      variables: { id: created.data.createBook.id }
+    })
+  });
+  const deleted = await deleteResponse.json();
+  assert.equal(deleted.errors, undefined);
+  assert.equal(deleted.data.deleteBook.ok, true);
+  server.close();
+});
