@@ -21,11 +21,30 @@ async function jsonRequest(url, options) {
   return data;
 }
 
+async function graphqlRequest(query, variables = {}) {
+  const response = await fetch("/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables })
+  });
+  const data = await response.json();
+  if (!response.ok || data.errors) {
+    throw new Error(data.errors?.[0]?.message || "No fue posible completar la operación");
+  }
+  return data.data;
+}
+
 async function searchCatalog(event) {
   event.preventDefault();
   const field = document.getElementById("searchField").value;
   const query = document.getElementById("searchQuery").value;
-  const books = await jsonRequest(`/api/catalog?field=${encodeURIComponent(field)}&query=${encodeURIComponent(query)}`);
+  const data = await graphqlRequest(`
+    query Catalog($field: String, $query: String) {
+      books(field: $field, query: $query) {
+        id title author classifier total volume location
+      }
+    }`, { field, query });
+  const books = data.books;
   const container = document.getElementById("catalogResults");
   container.innerHTML = books.length ? books.map(book => `
     <article class="book">
@@ -59,9 +78,13 @@ document.getElementById("userForm").addEventListener("submit", async event => {
     return;
   }
   try {
-    const user = await jsonRequest("/api/users", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data)
-    });
+    const result = await graphqlRequest(`
+      mutation CreateUser($input: UserInput!) {
+        createUser(input: $input) {
+          id fullName address postalCode phone email occupation workplace status credentialNumber
+        }
+      }`, { input: data });
+    const user = result.createUser;
     document.getElementById("credentialName").textContent = user.fullName;
     document.getElementById("credentialNumber").textContent = "Pendiente";
     document.getElementById("credentialData").innerHTML =
@@ -75,7 +98,13 @@ document.getElementById("userForm").addEventListener("submit", async event => {
 
 async function loadPendingUsers() {
   const container = document.getElementById("pendingUsers");
-  const users = await jsonRequest("/api/users/pending");
+  const data = await graphqlRequest(`
+    query PendingUsers {
+      pendingUsers {
+        id fullName addressProofType addressProof
+      }
+    }`);
+  const users = data.pendingUsers;
   container.innerHTML = users.length ? users.map(user => `
     <article class="pending-user">
       <div><strong>${user.fullName}</strong><small>${user.addressProofType} - ${user.addressProof}</small></div>
@@ -84,7 +113,12 @@ async function loadPendingUsers() {
   container.querySelectorAll(".approve-user").forEach(button => {
     button.addEventListener("click", async () => {
       try {
-        await jsonRequest(`/api/users/${encodeURIComponent(button.dataset.userId)}/approve`, { method: "POST" });
+        await graphqlRequest(`
+          mutation ApproveUser($id: ID!) {
+            approveUser(id: $id) {
+              id status credentialNumber
+            }
+          }`, { id: button.dataset.userId });
         await loadPendingUsers();
       } catch (error) { alert(error.message); }
     });
@@ -99,9 +133,13 @@ document.getElementById("loanForm").addEventListener("submit", async event => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget));
   try {
-    const loan = await jsonRequest("/api/loans", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data)
-    });
+    const result = await graphqlRequest(`
+      mutation CreateLoan($input: LoanInput!) {
+        createLoan(input: $input) {
+          id title loanDate returnDate libraryNumber
+        }
+      }`, { input: data });
+    const loan = result.createLoan;
     document.getElementById("loanResult").textContent =
       `Solicitud ${loan.id.slice(0, 8)} generada: «${loan.title}», préstamo ${loan.loanDate}, retorno ${loan.returnDate}, número ${loan.libraryNumber}.`;
   } catch (error) { alert(error.message); }

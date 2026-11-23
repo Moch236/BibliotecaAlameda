@@ -2,8 +2,29 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createServer } = require("../server");
 
+test("catalog is available through GraphQL", async () => {
+  const app = await createServer();
+  const server = app.listen(0);
+  await new Promise(resolve => server.once("listening", resolve));
+  const port = server.address().port;
+  const response = await fetch(`http://127.0.0.1:${port}/graphql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "query { books(field: \"title\", query: \"Cien\") { title author total location } }"
+    })
+  });
+  const result = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(result.errors, undefined);
+  assert.equal(result.data.books.length, 1);
+  assert.equal(result.data.books[0].author, "Gabriel García Márquez");
+  server.close();
+});
+
 test("catalog filters by title", async () => {
-  const server = createServer().listen(0);
+  const app = await createServer();
+  const server = app.listen(0);
   await new Promise(resolve => server.once("listening", resolve));
   const port = server.address().port;
   const response = await fetch(`http://127.0.0.1:${port}/api/catalog?field=title&query=Cien`);
@@ -17,7 +38,8 @@ test("catalog filters by title", async () => {
 });
 
 test("creates a digital member credential", async () => {
-  const server = createServer().listen(0);
+  const app = await createServer();
+  const server = app.listen(0);
   await new Promise(resolve => server.once("listening", resolve));
   const port = server.address().port;
   const response = await fetch(`http://127.0.0.1:${port}/api/users`, {
@@ -40,7 +62,8 @@ test("creates a digital member credential", async () => {
 });
 
 test("rejects address proof that is not INE", async () => {
-  const server = createServer().listen(0);
+  const app = await createServer();
+  const server = app.listen(0);
   await new Promise(resolve => server.once("listening", resolve));
   const port = server.address().port;
   const response = await fetch(`http://127.0.0.1:${port}/api/users`, {
@@ -54,7 +77,8 @@ test("rejects address proof that is not INE", async () => {
 });
 
 test("creates a loan request", async () => {
-  const server = createServer().listen(0);
+  const app = await createServer();
+  const server = app.listen(0);
   await new Promise(resolve => server.once("listening", resolve));
   const port = server.address().port;
   const response = await fetch(`http://127.0.0.1:${port}/api/loans`, {

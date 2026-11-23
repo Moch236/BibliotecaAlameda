@@ -1,8 +1,10 @@
-const http = require("node:http");
-const fs = require("node:fs");
-const path = require("node:path");
 const crypto = require("node:crypto");
 require("dotenv").config();
+
+const express = require("express");
+const { ApolloServer } = require("@apollo/server");
+const { expressMiddleware } = require("@as-integrations/express5");
+const { MongoClient } = require("mongodb");
 
 const ROOT = __dirname;
 const catalog = [
@@ -14,12 +16,148 @@ const users = [];
 const loans = [];
 let mongoClient = null;
 let mongoDb = null;
+let mongoConnected = false;
 
-const mimeTypes = {
-  ".html": "text/html; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8"
+const typeDefs = `#graphql
+  type Book {
+    id: ID!
+    title: String!
+    author: String!
+    classifier: String!
+    total: Int!
+    volume: String
+    location: String
+  }
+
+  type User {
+    id: ID!
+    fullName: String!
+    idDocument: String!
+    address: String!
+    postalCode: String
+    phone: String
+    email: String
+    occupation: String
+    workplace: String
+    addressProofType: String!
+    addressProof: String!
+    photo: String
+    emergencyContact: String
+    status: String!
+    credentialNumber: String
+  }
+
+  type Loan {
+    id: ID!
+    title: String!
+    loanDate: String!
+    returnDate: String!
+    libraryNumber: String!
+  }
+
+  type MongoStatus {
+    connected: Boolean!
+    database: String
+  }
+
+  type MutationResult {
+    ok: Boolean!
+    message: String
+  }
+
+  input UserInput {
+    fullName: String!
+    idDocument: String!
+    address: String!
+    postalCode: String
+    phone: String
+    email: String
+    occupation: String
+    workplace: String
+    addressProofType: String!
+    addressProof: String!
+    photo: String
+    emergencyContact: String
+  }
+
+  input LoanInput {
+    title: String!
+    loanDate: String!
+    returnDate: String!
+    libraryNumber: String!
+  }
+
+  type Query {
+    books(field: String, query: String): [Book!]!
+    pendingUsers: [User!]!
+    mongoStatus: MongoStatus!
+  }
+
+  type Mutation {
+    createUser(input: UserInput!): User!
+    approveUser(id: ID!): User!
+    createLoan(input: LoanInput!): Loan!
+  }
+`;
+
+function filterCatalog(field, query) {
+  const normalized = (query || "").trim().toLowerCase();
+  return normalized
+    ? catalog.filter(book => {
+        const value = field === "title" ? book.title
+          : field === "author" ? book.author
+          : field === "classifier" ? book.classifier
+          : `${book.title} ${book.author} ${book.classifier}`;
+        return value.toLowerCase().includes(normalized);
+      })
+    : catalog;
+}
+
+const resolvers = {
+  Query: {
+    books: (_parent, args) => filterCatalog(args.field, args.query),
+    pendingUsers: () => users.filter(user => user.status === "pending"),
+    mongoStatus: () => ({
+      connected: mongoConnected,
+      database: mongoConnected ? mongoDb?.databaseName || null : null
+    })
+  },
+  Mutation: {
+    createUser: async (_parent, { input }) => {
+      if (!input.fullName || !input.idDocument || !input.address) {
+        throw new Error("El nombre completo, documento y domicilio son obligatorios");
+      }
+      if (input.addressProofType !== "INE" || !input.addressProof) {
+        throw new Error("El comprobante de domicilio debe ser una INE");
+      }
+      const user = { id: crypto.randomUUID(), ...input, status: "pending", credentialNumber: null };
+      users.push(user);
+      if (mongoDb) await mongoDb.collection("users").insertOne(user);
+      return user;
+    },
+    approveUser: async (_parent, { id }) => {
+      const user = users.find(item => item.id === id);
+      if (!user) throw new Error("Usuario no encontrado");
+      if (user.status !== "approved") {
+        user.status = "approved";
+        user.credentialNumber = `BA-${Date.now().toString().slice(-8)}`;
+        if (mongoDb) await mongoDb.collection("users").updateOne(
+          { id: user.id },
+          { $set: { status: "approved", credentialNumber: user.credentialNumber } }
+        );
+      }
+      return user;
+    },
+    createLoan: async (_parent, { input }) => {
+      if (!input.title || !input.loanDate || !input.returnDate || !input.libraryNumber) {
+        throw new Error("Complete todos los datos de la solicitud");
+      }
+      const loan = { id: crypto.randomUUID(), ...input };
+      loans.push(loan);
+      if (mongoDb) await mongoDb.collection("loans").insertOne(loan);
+      return loan;
+    }
+  }
 };
 
 function sendJson(res, status, body) {
@@ -43,34 +181,27 @@ function readJson(req) {
 
 async function connectMongo(uri, databaseName) {
   if (!uri) throw new Error("Se requiere la cadena de conexión de MongoDB Atlas");
-  const { MongoClient } = require("mongodb");
-  if (mongoClient) await mongoClient.close();
+  if (mongoClient) {
+    await mongoClient.close();
+    mongoConnected = false;
+  }
   mongoClient = new MongoClient(uri);
   await mongoClient.connect();
   mongoDb = mongoClient.db(databaseName || "biblioteca_alameda");
+  mongoConnected = true;
   return mongoDb;
 }
 
 async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/mongo/status") {
     return sendJson(res, 200, {
-      connected: Boolean(mongoDb),
-      database: mongoDb?.databaseName || null
+      connected: mongoConnected,
+      database: mongoConnected ? mongoDb?.databaseName || null : null
     });
   }
 
   if (req.method === "GET" && url.pathname === "/api/catalog") {
-    const field = url.searchParams.get("field");
-    const query = (url.searchParams.get("query") || "").trim().toLowerCase();
-    const results = query
-      ? catalog.filter(book => {
-          const value = field === "title" ? book.title
-            : field === "author" ? book.author
-            : field === "classifier" ? book.classifier
-            : `${book.title} ${book.author} ${book.classifier}`;
-          return value.toLowerCase().includes(query);
-        })
-      : catalog;
+    const results = filterCatalog(url.searchParams.get("field"), url.searchParams.get("query"));
     return sendJson(res, 200, results);
   }
 
@@ -133,21 +264,20 @@ async function handleApi(req, res, url) {
   return sendJson(res, 404, { error: "Ruta no encontrada" });
 }
 
-function createServer() {
-  return http.createServer(async (req, res) => {
-    const url = new URL(req.url, "http://localhost");
-    if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
+async function createServer() {
+  const app = express();
 
-    const requested = url.pathname === "/" ? "/index.html" : url.pathname;
-    const filePath = path.normalize(path.join(ROOT, requested));
-    if (!filePath.startsWith(ROOT)) return sendJson(res, 403, { error: "Acceso denegado" });
-
-    fs.readFile(filePath, (error, content) => {
-      if (error) return sendJson(res, 404, { error: "Archivo no encontrado" });
-      res.writeHead(200, { "Content-Type": mimeTypes[path.extname(filePath)] || "application/octet-stream" });
-      res.end(content);
-    });
+  app.use("/api", (req, res) => {
+    const url = new URL(req.originalUrl, "http://localhost");
+    return handleApi(req, res, url);
   });
+
+  const apollo = new ApolloServer({ typeDefs, resolvers });
+  await apollo.start();
+  app.use("/graphql", express.json({ limit: "1mb" }), expressMiddleware(apollo));
+
+  app.use(express.static(ROOT));
+  return app;
 }
 
 if (require.main === module) {
@@ -168,7 +298,8 @@ if (require.main === module) {
       console.warn("MONGODB_URI no esta configurada en el archivo .env");
     }
 
-    createServer().listen(port, () => {
+    const app = await createServer();
+    app.listen(port, () => {
       console.log(`Biblioteca Alameda disponible en http://localhost:${port}`);
     });
   };
@@ -176,4 +307,4 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = { createServer, catalog };
+module.exports = { createServer, catalog, connectMongo };
