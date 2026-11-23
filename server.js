@@ -100,23 +100,26 @@ const typeDefs = `#graphql
   }
 `;
 
-function filterCatalog(field, query) {
+async function filterCatalog(field, query) {
   const normalized = (query || "").trim().toLowerCase();
+  const source = mongoDb ? await mongoDb.collection("books").find({}).toArray() : catalog;
   return normalized
-    ? catalog.filter(book => {
+    ? source.filter(book => {
         const value = field === "title" ? book.title
           : field === "author" ? book.author
           : field === "classifier" ? book.classifier
           : `${book.title} ${book.author} ${book.classifier}`;
         return value.toLowerCase().includes(normalized);
       })
-    : catalog;
+    : source;
 }
 
 const resolvers = {
   Query: {
     books: (_parent, args) => filterCatalog(args.field, args.query),
-    pendingUsers: () => users.filter(user => user.status === "pending"),
+    pendingUsers: async () => mongoDb
+      ? mongoDb.collection("users").find({ status: "pending" }).toArray()
+      : users.filter(user => user.status === "pending"),
     mongoStatus: () => ({
       connected: mongoConnected,
       database: mongoConnected ? mongoDb?.databaseName || null : null
@@ -136,7 +139,12 @@ const resolvers = {
       return user;
     },
     approveUser: async (_parent, { id }) => {
-      const user = users.find(item => item.id === id);
+      let user = users.find(item => item.id === id);
+      if (!user && mongoDb) {
+        user = await mongoDb.collection("users").findOne({
+          $or: [{ id }, { _id: id }]
+        });
+      }
       if (!user) throw new Error("Usuario no encontrado");
       if (user.status !== "approved") {
         user.status = "approved";
@@ -201,7 +209,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/catalog") {
-    const results = filterCatalog(url.searchParams.get("field"), url.searchParams.get("query"));
+    const results = await filterCatalog(url.searchParams.get("field"), url.searchParams.get("query"));
     return sendJson(res, 200, results);
   }
 
@@ -227,7 +235,13 @@ async function handleApi(req, res, url) {
 
   const approvalMatch = url.pathname.match(/^\/api\/users\/([^/]+)\/approve$/);
   if (req.method === "POST" && approvalMatch) {
-    const user = users.find(item => item.id === decodeURIComponent(approvalMatch[1]));
+    const userId = decodeURIComponent(approvalMatch[1]);
+    let user = users.find(item => item.id === userId);
+    if (!user && mongoDb) {
+      user = await mongoDb.collection("users").findOne({
+        $or: [{ id: userId }, { _id: userId }]
+      });
+    }
     if (!user) return sendJson(res, 404, { error: "Usuario no encontrado" });
     if (user.status === "approved") return sendJson(res, 200, user);
     user.status = "approved";

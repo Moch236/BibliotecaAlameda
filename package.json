@@ -5,7 +5,8 @@
   "description": "Aplicación de biblioteca y préstamos",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "seed:mongo": "node scripts/seed-mongo.js"
   },
   "dependencies": {
     "@apollo/server": "^5.5.2",
