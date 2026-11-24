@@ -347,6 +347,38 @@ Object.entries(complexQueries).forEach(([owner, queries]) => {
 });
 
 const loginDialog = document.getElementById("loginDialog");
-loginDialog.showModal();
-document.getElementById("loginForm").addEventListener("submit", () => loginDialog.close());
-document.getElementById("logoutButton").addEventListener("click", () => loginDialog.showModal());
+async function refreshAuthStatus() {
+  const response = await fetch("/api/auth/status");
+  const status = await response.json();
+  document.getElementById("logoutButton").textContent =
+    status.ok ? `Salir (${status.username})` : "Iniciar sesión";
+  if (!status.ok) loginDialog.showModal();
+  return status;
+}
+
+document.getElementById("loginForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const formData = new FormData(event.currentTarget);
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.fromEntries(formData))
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "No fue posible iniciar sesión");
+    loginDialog.close();
+    await refreshAuthStatus();
+  } catch (error) {
+    alert(error.message);
+  }
+});
+
+document.getElementById("logoutButton").addEventListener("click", async () => {
+  const status = await refreshAuthStatus();
+  if (!status.ok) return;
+  await fetch("/api/auth/logout", { method: "POST" });
+  await refreshAuthStatus();
+});
+
+refreshAuthStatus().catch(() => loginDialog.showModal());

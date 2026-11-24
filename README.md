@@ -23,6 +23,20 @@ PORT=3000
 
 El endpoint de salud es `/health` y el estado MongoDB puede consultarse en `/api/mongo/status`.
 
+## Seguridad y administración
+
+Las mutaciones CRUD requieren una sesión iniciada como administrador. Defina también `SESSION_SECRET` en el entorno de despliegue.
+
+Para crear o actualizar el primer administrador:
+
+```bash
+set ADMIN_USERNAME=Administrador
+set ADMIN_PASSWORD=<contraseña temporal>
+npm run admin:create
+```
+
+No almacene contraseñas administrativas en texto plano ni en Git. La aplicación guarda únicamente su hash bcrypt en MongoDB.
+
 Antes de iniciar, configure en `.env` la cadena real de MongoDB Atlas:
 
 ```env

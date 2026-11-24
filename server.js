@@ -2,6 +2,8 @@ const crypto = require("node:crypto");
 require("dotenv").config();
 
 const express = require("express");
+const session = require("express-session");
+const bcrypt = require("bcryptjs");
 const { ApolloServer } = require("@apollo/server");
 const { expressMiddleware } = require("@as-integrations/express5");
 const { MongoClient } = require("mongodb");
@@ -63,6 +65,13 @@ const typeDefs = `#graphql
 
   type MutationResult {
     ok: Boolean!
+    message: String
+  }
+
+  type AuthResult {
+    ok: Boolean!
+    username: String
+    role: String
     message: String
   }
 
@@ -143,6 +152,7 @@ const typeDefs = `#graphql
     users(limit: Int): [User!]!
     loans(limit: Int): [Loan!]!
     mongoStatus: MongoStatus!
+    authStatus: AuthResult!
 
     karlaUsersByStatus: [ComplexStat!]!
     karlaUsersByOccupation: [ComplexStat!]!
@@ -179,6 +189,8 @@ const typeDefs = `#graphql
   }
 
   type Mutation {
+    login(username: String!, password: String!): AuthResult!
+    logout: AuthResult!
     createUser(input: UserInput!): User!
     approveUser(id: ID!): User!
     updateUser(id: ID!, input: UpdateUserInput!): User!
@@ -217,6 +229,12 @@ async function runComplexAggregation(collectionName, pipeline) {
   }));
 }
 
+function requireAdmin(context) {
+  if (context?.req?.session?.role !== "admin") {
+    throw new Error("Se requiere una sesión de administrador");
+  }
+}
+
 const resolvers = {
   Query: {
     books: (_parent, args) => filterCatalog(args.field, args.query),
@@ -232,6 +250,12 @@ const resolvers = {
     mongoStatus: () => ({
       connected: mongoConnected,
       database: mongoConnected ? mongoDb?.databaseName || null : null
+    }),
+    authStatus: (_parent, _args, context) => ({
+      ok: Boolean(context.req?.session?.role),
+      username: context.req?.session?.username || null,
+      role: context.req?.session?.role || null,
+      message: context.req?.session?.role ? "Sesión activa" : "Sin sesión"
     }),
 
     karlaUsersByStatus: () => runComplexAggregation("users", [
@@ -426,106 +450,117 @@ const resolvers = {
     ])
   },
   Mutation: {
-    createUser: async (_parent, { input }) => {
+    login: async (_parent, { username, password }, context) => {
+      if (!mongoDb) throw new Error("MongoDB no está disponible");
+      const account = await mongoDb.collection("accounts").findOne({ username });
+      if (!account || !await bcrypt.compare(password, account.passwordHash)) {
+        throw new Error("Usuario o contraseña incorrectos");
+      }
+      context.req.session.username = account.username;
+      context.req.session.role = account.role;
+      return { ok: true, username: account.username, role: account.role, message: "Sesión iniciada" };
+    },
+    logout: (_parent, _args, context) => {
+      context.req.session.destroy();
+      return { ok: true, username: null, role: null, message: "Sesión cerrada" };
+    },
+    createUser: async (_parent, { input }, context) => {
+      requireAdmin(context);
+      if (!mongoDb) throw new Error("MongoDB no está disponible");
       if (!input.fullName || !input.idDocument || !input.address) {
         throw new Error("El nombre completo, documento y domicilio son obligatorios");
       }
       if (input.addressProofType !== "INE" || !input.addressProof) {
         throw new Error("El comprobante de domicilio debe ser una INE");
       }
+      if (!/\.(pdf|jpg|jpeg|png)$/i.test(input.addressProof)) {
+        throw new Error("El comprobante debe ser PDF, JPG, JPEG o PNG");
+      }
       const user = { id: crypto.randomUUID(), ...input, status: "pending", credentialNumber: null };
-      users.push(user);
-      if (mongoDb) await mongoDb.collection("users").insertOne(user);
+      await mongoDb.collection("users").insertOne(user);
       return user;
     },
-    approveUser: async (_parent, { id }) => {
-      let user = users.find(item => item.id === id);
-      if (!user && mongoDb) {
-        user = await mongoDb.collection("users").findOne({
-          $or: [{ id }, { _id: id }]
-        });
-      }
+    approveUser: async (_parent, { id }, context) => {
+      requireAdmin(context);
+      if (!mongoDb) throw new Error("MongoDB no está disponible");
+      const user = await mongoDb.collection("users").findOne({ id });
       if (!user) throw new Error("Usuario no encontrado");
       if (user.status !== "approved") {
         user.status = "approved";
         user.credentialNumber = `BA-${Date.now().toString().slice(-8)}`;
-        if (mongoDb) await mongoDb.collection("users").updateOne(
+        await mongoDb.collection("users").updateOne(
           { id: user.id },
           { $set: { status: "approved", credentialNumber: user.credentialNumber } }
         );
       }
       return user;
     },
-    createLoan: async (_parent, { input }) => {
+    createLoan: async (_parent, { input }, context) => {
+      requireAdmin(context);
+      if (!mongoDb) throw new Error("MongoDB no está disponible");
       if (!input.title || !input.loanDate || !input.returnDate || !input.libraryNumber) {
         throw new Error("Complete todos los datos de la solicitud");
       }
       const loan = { id: crypto.randomUUID(), ...input, status: input.status || "active" };
-      loans.push(loan);
-      if (mongoDb) await mongoDb.collection("loans").insertOne(loan);
+      await mongoDb.collection("loans").insertOne(loan);
       return loan;
     },
-    updateUser: async (_parent, { id, input }) => {
-      let user = users.find(item => item.id === id);
-      if (!user && mongoDb) user = await mongoDb.collection("users").findOne({ id });
+    updateUser: async (_parent, { id, input }, context) => {
+      requireAdmin(context);
+      if (!mongoDb) throw new Error("MongoDB no está disponible");
+      const user = await mongoDb.collection("users").findOne({ id });
       if (!user) throw new Error("Usuario no encontrado");
       Object.assign(user, input);
-      if (mongoDb) await mongoDb.collection("users").updateOne({ id }, { $set: input });
+      await mongoDb.collection("users").updateOne({ id }, { $set: input });
       return user;
     },
-    deleteUser: async (_parent, { id }) => {
-      const inMemoryIndex = users.findIndex(item => item.id === id);
-      if (inMemoryIndex >= 0) users.splice(inMemoryIndex, 1);
-      let deleted = inMemoryIndex >= 0;
-      if (mongoDb) {
-        const result = await mongoDb.collection("users").deleteOne({ id });
-        deleted = deleted || result.deletedCount > 0;
-      }
+    deleteUser: async (_parent, { id }, context) => {
+      requireAdmin(context);
+      if (!mongoDb) throw new Error("MongoDB no está disponible");
+      const result = await mongoDb.collection("users").deleteOne({ id });
+      const deleted = result.deletedCount > 0;
       return { ok: deleted, message: deleted ? "Usuario eliminado" : "Usuario no encontrado" };
     },
-    updateLoan: async (_parent, { id, input }) => {
-      let loan = loans.find(item => item.id === id);
-      if (!loan && mongoDb) loan = await mongoDb.collection("loans").findOne({ id });
+    updateLoan: async (_parent, { id, input }, context) => {
+      requireAdmin(context);
+      if (!mongoDb) throw new Error("MongoDB no está disponible");
+      const loan = await mongoDb.collection("loans").findOne({ id });
       if (!loan) throw new Error("Préstamo no encontrado");
       Object.assign(loan, input);
-      if (mongoDb) await mongoDb.collection("loans").updateOne({ id }, { $set: input });
+      await mongoDb.collection("loans").updateOne({ id }, { $set: input });
       return loan;
     },
-    deleteLoan: async (_parent, { id }) => {
-      const inMemoryIndex = loans.findIndex(item => item.id === id);
-      if (inMemoryIndex >= 0) loans.splice(inMemoryIndex, 1);
-      let deleted = inMemoryIndex >= 0;
-      if (mongoDb) {
-        const result = await mongoDb.collection("loans").deleteOne({ id });
-        deleted = deleted || result.deletedCount > 0;
-      }
+    deleteLoan: async (_parent, { id }, context) => {
+      requireAdmin(context);
+      if (!mongoDb) throw new Error("MongoDB no está disponible");
+      const result = await mongoDb.collection("loans").deleteOne({ id });
+      const deleted = result.deletedCount > 0;
       return { ok: deleted, message: deleted ? "Préstamo eliminado" : "Préstamo no encontrado" };
     },
-    createBook: async (_parent, { input }) => {
+    createBook: async (_parent, { input }, context) => {
+      requireAdmin(context);
+      if (!mongoDb) throw new Error("MongoDB no está disponible");
       if (!input.title || !input.author || !input.classifier) {
         throw new Error("Complete título, autor y clasificador");
       }
       const book = { id: `BOOK-${crypto.randomUUID()}`, ...input };
-      catalog.push(book);
-      if (mongoDb) await mongoDb.collection("books").insertOne(book);
+      await mongoDb.collection("books").insertOne(book);
       return book;
     },
-    updateBook: async (_parent, { id, input }) => {
-      let book = catalog.find(item => item.id === id);
-      if (!book && mongoDb) book = await mongoDb.collection("books").findOne({ id });
+    updateBook: async (_parent, { id, input }, context) => {
+      requireAdmin(context);
+      if (!mongoDb) throw new Error("MongoDB no está disponible");
+      const book = await mongoDb.collection("books").findOne({ id });
       if (!book) throw new Error("Libro no encontrado");
       Object.assign(book, input);
-      if (mongoDb) await mongoDb.collection("books").updateOne({ id }, { $set: input });
+      await mongoDb.collection("books").updateOne({ id }, { $set: input });
       return book;
     },
-    deleteBook: async (_parent, { id }) => {
-      const inMemoryIndex = catalog.findIndex(item => item.id === id);
-      if (inMemoryIndex >= 0) catalog.splice(inMemoryIndex, 1);
-      let deleted = inMemoryIndex >= 0;
-      if (mongoDb) {
-        const result = await mongoDb.collection("books").deleteOne({ id });
-        deleted = deleted || result.deletedCount > 0;
-      }
+    deleteBook: async (_parent, { id }, context) => {
+      requireAdmin(context);
+      if (!mongoDb) throw new Error("MongoDB no está disponible");
+      const result = await mongoDb.collection("books").deleteOne({ id });
+      const deleted = result.deletedCount > 0;
       return { ok: deleted, message: deleted ? "Libro eliminado" : "Libro no encontrado" };
     }
   }
@@ -603,6 +638,35 @@ async function connectMongo(uri, databaseName) {
 }
 
 async function handleApi(req, res, url) {
+  if (req.method === "GET" && url.pathname === "/api/auth/status") {
+    return sendJson(res, 200, {
+      ok: Boolean(req.session?.role),
+      username: req.session?.username || null,
+      role: req.session?.role || null
+    });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/login") {
+    try {
+      const body = await readJson(req);
+      if (!mongoDb) return sendJson(res, 503, { error: "MongoDB no está disponible" });
+      const account = await mongoDb.collection("accounts").findOne({ username: body.username });
+      if (!account || !await bcrypt.compare(body.password || "", account.passwordHash)) {
+        return sendJson(res, 401, { error: "Usuario o contraseña incorrectos" });
+      }
+      req.session.username = account.username;
+      req.session.role = account.role;
+      return sendJson(res, 200, { ok: true, username: account.username, role: account.role });
+    } catch (error) {
+      return sendJson(res, 400, { error: error.message });
+    }
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/logout") {
+    req.session.destroy();
+    return sendJson(res, 200, { ok: true });
+  }
+
   if (req.method === "GET" && url.pathname === "/api/mongo/status") {
     return sendJson(res, 200, {
       connected: mongoConnected,
@@ -610,71 +674,11 @@ async function handleApi(req, res, url) {
     });
   }
 
-  if (req.method === "GET" && url.pathname === "/api/catalog") {
-    const results = await filterCatalog(url.searchParams.get("field"), url.searchParams.get("query"));
-    return sendJson(res, 200, results);
-  }
-
-  if (req.method === "POST" && url.pathname === "/api/users") {
-    try {
-      const body = await readJson(req);
-      if (!body.fullName || !body.idDocument || !body.address) {
-        return sendJson(res, 400, { error: "El nombre completo, documento y domicilio son obligatorios" });
-      }
-      if (body.addressProofType !== "INE" || !body.addressProof) {
-        return sendJson(res, 400, { error: "El comprobante de domicilio debe ser una INE" });
-      }
-      const user = { id: crypto.randomUUID(), ...body, status: "pending", credentialNumber: null };
-      users.push(user);
-      if (mongoDb) await mongoDb.collection("users").insertOne(user);
-      return sendJson(res, 201, user);
-    } catch (error) { return sendJson(res, 400, { error: error.message }); }
-  }
-
   if (req.method === "GET" && url.pathname === "/api/users/pending") {
-    return sendJson(res, 200, users.filter(user => user.status === "pending"));
-  }
-
-  const approvalMatch = url.pathname.match(/^\/api\/users\/([^/]+)\/approve$/);
-  if (req.method === "POST" && approvalMatch) {
-    const userId = decodeURIComponent(approvalMatch[1]);
-    let user = users.find(item => item.id === userId);
-    if (!user && mongoDb) {
-      user = await mongoDb.collection("users").findOne({
-        $or: [{ id: userId }, { _id: userId }]
-      });
-    }
-    if (!user) return sendJson(res, 404, { error: "Usuario no encontrado" });
-    if (user.status === "approved") return sendJson(res, 200, user);
-    user.status = "approved";
-    user.credentialNumber = `BA-${Date.now().toString().slice(-8)}`;
-    if (mongoDb) await mongoDb.collection("users").updateOne(
-      { id: user.id },
-      { $set: { status: "approved", credentialNumber: user.credentialNumber } }
-    );
-    return sendJson(res, 200, user);
-  }
-
-  if (req.method === "POST" && url.pathname === "/api/loans") {
-    try {
-      const body = await readJson(req);
-      if (!body.title || !body.loanDate || !body.returnDate || !body.libraryNumber) {
-        return sendJson(res, 400, { error: "Complete todos los datos de la solicitud" });
-      }
-      const loan = { id: crypto.randomUUID(), ...body };
-      loans.push(loan);
-      if (mongoDb) await mongoDb.collection("loans").insertOne(loan);
-      return sendJson(res, 201, loan);
-    } catch (error) { return sendJson(res, 400, { error: error.message }); }
-  }
-
-  if (req.method === "POST" && url.pathname === "/api/mongo/connect") {
-    try {
-      const body = await readJson(req);
-      const db = await connectMongo(body.uri, body.database);
-      await db.admin().ping();
-      return sendJson(res, 200, { connected: true, database: db.databaseName });
-    } catch (error) { return sendJson(res, 400, { connected: false, error: error.message }); }
+    const pending = mongoDb
+      ? await mongoDb.collection("users").find({ status: "pending" }).toArray()
+      : users.filter(user => user.status === "pending");
+    return sendJson(res, 200, pending);
   }
 
   return sendJson(res, 404, { error: "Ruta no encontrada" });
@@ -682,6 +686,19 @@ async function handleApi(req, res, url) {
 
 async function createServer() {
   const app = express();
+
+  app.use(session({
+    name: "biblioteca.sid",
+    secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex"),
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 8 * 60 * 60 * 1000
+    }
+  }));
 
   app.get("/health", (_req, res) => {
     sendJson(res, 200, {
@@ -698,7 +715,9 @@ async function createServer() {
 
   const apollo = new ApolloServer({ typeDefs, resolvers });
   await apollo.start();
-  app.use("/graphql", express.json({ limit: "1mb" }), expressMiddleware(apollo));
+  app.use("/graphql", express.json({ limit: "1mb" }), expressMiddleware(apollo, {
+    context: async ({ req }) => ({ req })
+  }));
 
   app.use(express.static(ROOT));
   return app;
