@@ -458,6 +458,9 @@ const resolvers = {
       }
       context.req.session.username = account.username;
       context.req.session.role = account.role;
+      await new Promise((resolve, reject) => {
+        context.req.session.save(error => error ? reject(error) : resolve());
+      });
       return { ok: true, username: account.username, role: account.role, message: "Sesión iniciada" };
     },
     logout: (_parent, _args, context) => {
@@ -656,7 +659,11 @@ async function handleApi(req, res, url) {
       }
       req.session.username = account.username;
       req.session.role = account.role;
-      return sendJson(res, 200, { ok: true, username: account.username, role: account.role });
+      req.session.save(error => {
+        if (error) return sendJson(res, 500, { error: "No fue posible guardar la sesión" });
+        return sendJson(res, 200, { ok: true, username: account.username, role: account.role });
+      });
+      return;
     } catch (error) {
       return sendJson(res, 400, { error: error.message });
     }
