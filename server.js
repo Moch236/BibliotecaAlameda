@@ -644,6 +644,14 @@ async function handleApi(req, res, url) {
 async function createServer() {
   const app = express();
 
+  app.get("/health", (_req, res) => {
+    sendJson(res, 200, {
+      ok: true,
+      mongo: mongoConnected,
+      database: mongoConnected ? mongoDb?.databaseName || null : null
+    });
+  });
+
   app.use("/api", (req, res) => {
     const url = new URL(req.originalUrl, "http://localhost");
     return handleApi(req, res, url);

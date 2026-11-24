@@ -10,6 +10,19 @@ npm start
 
 Abra `http://localhost:3000`. La aplicación incluye acceso por usuario, consulta de libros por título, autor o clasificador, registro de usuarios y credenciales digitales, solicitudes de préstamo y conexión a MongoDB Atlas.
 
+## Despliegue en Render
+
+Configure el servicio con `npm install` como build y `npm start` como inicio.
+Defina estas variables de entorno en Render:
+
+```env
+MONGODB_URI=<URI de MongoDB Atlas>
+MONGODB_DATABASE=biblioteca_alameda
+PORT=3000
+```
+
+El endpoint de salud es `/health` y el estado MongoDB puede consultarse en `/api/mongo/status`.
+
 Antes de iniciar, configure en `.env` la cadena real de MongoDB Atlas:
 
 ```env

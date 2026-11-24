@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: biblioteca-k76i
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/mongo/status
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: MONGODB_DATABASE
+        value: biblioteca_alameda
