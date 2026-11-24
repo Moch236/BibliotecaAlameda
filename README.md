@@ -1,6 +1,10 @@
 # BibliotecaAlameda
 Repositorio de aplicación tester para la biblioteca situada en el parque Alameda en Tepic
 
+Documento técnico completo:
+
+- [Documento técnico](docs/Documento_Tecnico_BibliotecaAlameda.md)
+
 ## Ejecutar la aplicación
 
 ```bash
