@@ -23,9 +23,13 @@ async function jsonRequest(url, options) {
 }
 
 async function graphqlRequest(query, variables = {}) {
+  const token = localStorage.getItem("biblioteca_token");
   const response = await fetch("/graphql", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
     body: JSON.stringify({ query, variables })
   });
   const data = await response.json();
@@ -367,6 +371,7 @@ document.getElementById("loginForm").addEventListener("submit", async event => {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "No fue posible iniciar sesión");
+    if (data.token) localStorage.setItem("biblioteca_token", data.token);
     loginDialog.close();
     await refreshAuthStatus();
   } catch (error) {
@@ -378,6 +383,7 @@ document.getElementById("logoutButton").addEventListener("click", async () => {
   const status = await refreshAuthStatus();
   if (!status.ok) return;
   await fetch("/api/auth/logout", { method: "POST" });
+  localStorage.removeItem("biblioteca_token");
   await refreshAuthStatus();
 });
 

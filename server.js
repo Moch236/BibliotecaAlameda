@@ -20,6 +20,53 @@ let mongoClient = null;
 let mongoDb = null;
 let mongoConnected = false;
 
+function createAuthToken(account) {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) throw new Error("SESSION_SECRET no está configurada");
+  const normalizedSecret = String(secret).replace(/^"|"$/g, "");
+  const payload = Buffer.from(JSON.stringify({
+    username: account.username,
+    role: account.role,
+    expiresAt: Date.now() + (8 * 60 * 60 * 1000)
+  })).toString("base64url");
+  const signature = crypto.createHmac("sha256", normalizedSecret).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function verifyAuthToken(token) {
+  if (!token) return null;
+  const [payload, signature, extra] = token.split(".");
+  if (!payload || !signature || extra) return null;
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) return null;
+  const normalizedSecret = String(secret).replace(/^"|"$/g, "");
+  const expected = crypto.createHmac("sha256", normalizedSecret).update(payload).digest("base64url");
+  if (signature.length !== expected.length ||
+      !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (!data.username || !data.role || Number(data.expiresAt) <= Date.now()) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function getRequestAuth(req) {
+  const authorization = req?.headers?.authorization || req?.headers?.Authorization || "";
+  const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7) : null;
+  if (bearer) return verifyAuthToken(bearer);
+
+  const cookie = req.headers?.cookie || "";
+  const match = cookie.match(/(?:^|;\s*)biblioteca_token=([^;]+)/);
+  return verifyAuthToken(match ? decodeURIComponent(match[1]) : null);
+}
+
+function setAuthCookie(res, token) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.setHeader("Set-Cookie", `biblioteca_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800${secure}`);
+}
+
 const typeDefs = `#graphql
   type Book {
     id: ID!
@@ -230,7 +277,8 @@ async function runComplexAggregation(collectionName, pipeline) {
 }
 
 function requireAdmin(context) {
-  if (context?.req?.session?.role !== "admin") {
+  const auth = getRequestAuth(context?.req);
+  if (auth?.role !== "admin") {
     throw new Error("Se requiere una sesión de administrador");
   }
 }
@@ -456,15 +504,12 @@ const resolvers = {
       if (!account || !await bcrypt.compare(password, account.passwordHash)) {
         throw new Error("Usuario o contraseña incorrectos");
       }
-      context.req.session.username = account.username;
-      context.req.session.role = account.role;
-      await new Promise((resolve, reject) => {
-        context.req.session.save(error => error ? reject(error) : resolve());
-      });
+      const token = createAuthToken(account);
+      setAuthCookie(context.res, token);
       return { ok: true, username: account.username, role: account.role, message: "Sesión iniciada" };
     },
     logout: (_parent, _args, context) => {
-      context.req.session.destroy();
+      context.res.setHeader("Set-Cookie", "biblioteca_token=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax");
       return { ok: true, username: null, role: null, message: "Sesión cerrada" };
     },
     createUser: async (_parent, { input }, context) => {
@@ -642,10 +687,11 @@ async function connectMongo(uri, databaseName) {
 
 async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/auth/status") {
+    const auth = getRequestAuth(req);
     return sendJson(res, 200, {
-      ok: Boolean(req.session?.role),
-      username: req.session?.username || null,
-      role: req.session?.role || null
+      ok: auth?.role === "admin",
+      username: auth?.username || null,
+      role: auth?.role || null
     });
   }
 
@@ -657,20 +703,16 @@ async function handleApi(req, res, url) {
       if (!account || !await bcrypt.compare(body.password || "", account.passwordHash)) {
         return sendJson(res, 401, { error: "Usuario o contraseña incorrectos" });
       }
-      req.session.username = account.username;
-      req.session.role = account.role;
-      req.session.save(error => {
-        if (error) return sendJson(res, 500, { error: "No fue posible guardar la sesión" });
-        return sendJson(res, 200, { ok: true, username: account.username, role: account.role });
-      });
-      return;
+      const token = createAuthToken(account);
+      setAuthCookie(res, token);
+      return sendJson(res, 200, { ok: true, username: account.username, role: account.role, token });
     } catch (error) {
       return sendJson(res, 400, { error: error.message });
     }
   }
 
   if (req.method === "POST" && url.pathname === "/api/auth/logout") {
-    req.session.destroy();
+    res.setHeader("Set-Cookie", "biblioteca_token=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax");
     return sendJson(res, 200, { ok: true });
   }
 
@@ -724,7 +766,7 @@ async function createServer() {
   const apollo = new ApolloServer({ typeDefs, resolvers });
   await apollo.start();
   app.use("/graphql", express.json({ limit: "1mb" }), expressMiddleware(apollo, {
-    context: async ({ req }) => ({ req })
+    context: async ({ req, res }) => ({ req, res })
   }));
 
   app.use(express.static(ROOT));
