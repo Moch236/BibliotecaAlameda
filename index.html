@@ -14,6 +14,7 @@
         <button class="nav-item active" data-section="catalog">Catálogo</button>
         <button class="nav-item" data-section="users">Usuarios</button>
         <button class="nav-item" data-section="loans">Préstamos</button>
+        <button class="nav-item" data-section="queries">Consultas complejas</button>
       </nav>
     </aside>
 
@@ -100,6 +101,27 @@
           <h2>Préstamos registrados</h2>
           <div id="loanList" class="data-list" aria-live="polite"></div>
         </section>
+      </section>
+
+      <section class="view" id="queries">
+        <div class="grid-three">
+          <article class="card query-card">
+            <h2>Karla - Usuarios</h2>
+            <div id="karlaQueries" class="query-buttons"></div>
+          </article>
+          <article class="card query-card">
+            <h2>Francisco - Préstamos</h2>
+            <div id="franciscoQueries" class="query-buttons"></div>
+          </article>
+          <article class="card query-card">
+            <h2>Saúl - Catálogo</h2>
+            <div id="saulQueries" class="query-buttons"></div>
+          </article>
+        </div>
+        <article class="card query-results-card">
+          <h2 id="queryResultTitle">Resultado de consulta</h2>
+          <div id="complexQueryResults" class="data-list" aria-live="polite"></div>
+        </article>
       </section>
 
     </section>

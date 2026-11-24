@@ -1,7 +1,8 @@
 const titles = {
   catalog: "Consulta de libros",
   users: "Creación de usuarios",
-  loans: "Solicitud de préstamo"
+  loans: "Solicitud de préstamo",
+  queries: "Consultas supercomplejas"
 };
 
 document.querySelectorAll(".nav-item").forEach(button => {
@@ -146,45 +147,6 @@ async function loadPendingUsers() {
       pendingUsers {
         id fullName addressProofType addressProof
       }
-
-      async function loadUsers() {
-        const data = await graphqlRequest(`
-          query Users {
-            users(limit: 100) {
-              id fullName email address status credentialNumber
-            }
-          }`);
-        const container = document.getElementById("userList");
-        container.innerHTML = data.users.length ? data.users.map(user => `
-          <article class="data-row">
-            <div><strong>${user.fullName}</strong><small>${user.email || "Sin correo"} - ${user.status}</small></div>
-            <div class="row-actions">
-              <button class="secondary edit-user" type="button" data-user-id="${user.id}">Editar</button>
-              <button class="danger delete-user" type="button" data-user-id="${user.id}">Eliminar</button>
-            </div>
-          </article>`).join("") : "<p>No hay usuarios registrados.</p>";
-        container.querySelectorAll(".edit-user").forEach(button => {
-          button.addEventListener("click", async () => {
-            const fullName = prompt("Nombre completo");
-            if (!fullName) return;
-            try {
-              await graphqlRequest(`mutation UpdateUser($id: ID!, $input: UpdateUserInput!) { updateUser(id: $id, input: $input) { id } }`, {
-                id: button.dataset.userId, input: { fullName }
-              });
-              await Promise.all([loadUsers(), loadPendingUsers()]);
-            } catch (error) { alert(error.message); }
-          });
-        });
-        container.querySelectorAll(".delete-user").forEach(button => {
-          button.addEventListener("click", async () => {
-            if (!confirm("¿Eliminar este usuario?")) return;
-            try {
-              await graphqlRequest(`mutation DeleteUser($id: ID!) { deleteUser(id: $id) { ok message } }`, { id: button.dataset.userId });
-              await Promise.all([loadUsers(), loadPendingUsers()]);
-            } catch (error) { alert(error.message); }
-          });
-        });
-      }
     }`);
   const users = data.pendingUsers;
   container.innerHTML = users.length ? users.map(user => `
@@ -210,6 +172,46 @@ async function loadPendingUsers() {
 loadPendingUsers().catch(error => {
   document.getElementById("pendingUsers").textContent = error.message;
 });
+
+async function loadUsers() {
+  const data = await graphqlRequest(`
+    query Users {
+      users(limit: 100) {
+        id fullName email address status credentialNumber
+      }
+    }`);
+  const container = document.getElementById("userList");
+  container.innerHTML = data.users.length ? data.users.map(user => `
+    <article class="data-row">
+      <div><strong>${user.fullName}</strong><small>${user.email || "Sin correo"} - ${user.status}</small></div>
+      <div class="row-actions">
+        <button class="secondary edit-user" type="button" data-user-id="${user.id}">Editar</button>
+        <button class="danger delete-user" type="button" data-user-id="${user.id}">Eliminar</button>
+      </div>
+    </article>`).join("") : "<p>No hay usuarios registrados.</p>";
+  container.querySelectorAll(".edit-user").forEach(button => {
+    button.addEventListener("click", async () => {
+      const fullName = prompt("Nombre completo");
+      if (!fullName) return;
+      try {
+        await graphqlRequest(`mutation UpdateUser($id: ID!, $input: UpdateUserInput!) { updateUser(id: $id, input: $input) { id } }`, {
+          id: button.dataset.userId, input: { fullName }
+        });
+        await Promise.all([loadUsers(), loadPendingUsers()]);
+      } catch (error) { alert(error.message); }
+    });
+  });
+  container.querySelectorAll(".delete-user").forEach(button => {
+    button.addEventListener("click", async () => {
+      if (!confirm("¿Eliminar este usuario?")) return;
+      try {
+        await graphqlRequest(`mutation DeleteUser($id: ID!) { deleteUser(id: $id) { ok message } }`, { id: button.dataset.userId });
+        await Promise.all([loadUsers(), loadPendingUsers()]);
+      } catch (error) { alert(error.message); }
+    });
+  });
+}
+
 loadUsers().catch(error => {
   document.getElementById("userList").textContent = error.message;
 });
@@ -273,6 +275,75 @@ async function loadLoans() {
 
 loadLoans().catch(error => {
   document.getElementById("loanList").textContent = error.message;
+});
+
+const complexQueries = {
+  karla: [
+    ["Usuarios por estado", "karlaUsersByStatus"],
+    ["Usuarios por ocupación", "karlaUsersByOccupation"],
+    ["Usuarios por código postal", "karlaUsersByPostalCode"],
+    ["Pendientes por ocupación", "karlaPendingUsersByOccupation"],
+    ["Aprobados por lugar de trabajo", "karlaApprovedUsersByWorkplace"],
+    ["Nombres completos duplicados", "karlaDuplicateFullNames"],
+    ["Credenciales por código postal", "karlaCredentialUsersByPostalCode"],
+    ["Usuarios sin teléfono", "karlaUsersWithoutPhone"],
+    ["Usuarios por postal y ocupación", "karlaUsersByPostalAndOccupation"],
+    ["Usuarios con préstamos por estado", "karlaUsersWithLoansByStatus"]
+  ],
+  francisco: [
+    ["Préstamos por estado", "franciscoLoansByStatus"],
+    ["Préstamos por mes", "franciscoLoansByMonth"],
+    ["Libros más prestados", "franciscoTopBorrowedBooks"],
+    ["Lectores más activos", "franciscoMostActiveBorrowers"],
+    ["Préstamos activos vencidos", "franciscoOverdueActiveLoans"],
+    ["Préstamos por mes de retorno", "franciscoLoansByReturnMonth"],
+    ["Duración promedio mensual", "franciscoAverageDurationByMonth"],
+    ["Estado por lector", "franciscoLoanStatusByBorrower"],
+    ["Tasa mensual de devolución", "franciscoReturnedRateByMonth"],
+    ["Tarjetas con más préstamos", "franciscoTopLibraryNumbers"]
+  ],
+  saul: [
+    ["Autores con mayor colección", "saulTopAuthors"],
+    ["Libros por ubicación", "saulBooksByLocationPrefix"],
+    ["Libros por volumen", "saulBooksByVolume"],
+    ["Libros por disponibilidad", "saulBooksByAvailability"],
+    ["Libros por rango clasificador", "saulBooksByClassifierRange"],
+    ["Ubicaciones con mayor stock", "saulLocationsWithHighestStock"],
+    ["Matriz autor-ubicación", "saulAuthorLocationMatrix"],
+    ["Clasificadores principales", "saulTopClassifiers"],
+    ["Distribución por materia", "saulSubjectDistribution"],
+    ["Autores con baja disponibilidad", "saulAuthorsWithLowAvailability"]
+  ]
+};
+
+async function runComplexQuery(field, label) {
+  document.getElementById("queryResultTitle").textContent = label;
+  const container = document.getElementById("complexQueryResults");
+  container.textContent = "Ejecutando consulta...";
+  try {
+    const data = await graphqlRequest(`query ComplexQuery {
+      ${field} { label value count details }
+    }`);
+    const rows = data[field];
+    container.innerHTML = rows.length ? rows.map(row => `
+      <article class="data-row">
+        <div><strong>${row.label}</strong><small>${row.details || ""}</small></div>
+        <div><strong>${row.value}</strong><small>${row.count} registros</small></div>
+      </article>`).join("") : "<p>La consulta no produjo resultados.</p>";
+  } catch (error) {
+    container.textContent = error.message;
+  }
+}
+
+Object.entries(complexQueries).forEach(([owner, queries]) => {
+  const container = document.getElementById(`${owner}Queries`);
+  container.innerHTML = queries.map(([label, field]) => `
+    <button class="query-button" type="button" data-field="${field}" data-label="${label}">
+      ${label}
+    </button>`).join("");
+  container.querySelectorAll(".query-button").forEach(button => {
+    button.addEventListener("click", () => runComplexQuery(button.dataset.field, button.dataset.label));
+  });
 });
 
 const loginDialog = document.getElementById("loginDialog");

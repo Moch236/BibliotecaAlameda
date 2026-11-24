@@ -54,6 +54,11 @@ label { display:flex; flex-direction:column; gap:7px; margin-bottom:14px; font-w
 .row-actions { display:flex; flex-direction:row; gap:8px; }
 .secondary { border:1px solid var(--wine); border-radius:8px; background:transparent; color:var(--wine); padding:8px 12px; cursor:pointer; }
 .danger { border:0; border-radius:8px; background:#8e2f3d; color:white; padding:8px 12px; cursor:pointer; }
+.grid-three { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+.query-buttons { display:flex; flex-direction:column; gap:8px; }
+.query-button { border:1px solid var(--sand); border-radius:8px; background:white; color:var(--wine); padding:9px; text-align:left; cursor:pointer; }
+.query-button:hover { background:#faf3f4; }
+.query-results-card { margin-top:20px; }
 .pending-users { display:flex; flex-direction:column; gap:10px; }
 .pending-user { display:flex; align-items:center; justify-content:space-between; gap:16px; border:1px solid var(--sand); border-radius:10px; padding:12px; }
 .pending-user div { display:flex; flex-direction:column; }
@@ -70,5 +75,5 @@ dialog::backdrop { background:rgba(48,39,43,.72); }
   .nav-item { white-space:nowrap; }
   .topbar { height:auto; padding:16px 20px; }
   .view { padding:20px; }
-  .search-card, .grid-two, .grid-four { grid-template-columns:1fr; }
+  .search-card, .grid-two, .grid-four, .grid-three { grid-template-columns:1fr; }
 }

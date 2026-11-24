@@ -125,3 +125,25 @@ test("supports book create and delete through GraphQL", async () => {
   assert.equal(deleted.data.deleteBook.ok, true);
   server.close();
 });
+
+test("exposes thirty complex member queries", async () => {
+  const app = await createServer();
+  const server = app.listen(0);
+  await new Promise(resolve => server.once("listening", resolve));
+  const port = server.address().port;
+  const response = await fetch(`http://127.0.0.1:${port}/graphql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: `query { __type(name: "Query") { fields { name } } }`
+    })
+  });
+  const result = await response.json();
+  assert.equal(result.errors, undefined);
+  const names = result.data.__type.fields.map(field => field.name);
+  const complexNames = names.filter(name =>
+    name.startsWith("karla") || name.startsWith("francisco") || name.startsWith("saul")
+  );
+  assert.equal(complexNames.length, 30);
+  server.close();
+});

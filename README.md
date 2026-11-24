@@ -24,3 +24,46 @@ Para ejecutar las pruebas:
 ```bash
 npm test
 ```
+
+## Consultas supercomplejas GraphQL
+
+La API expone 30 consultas de agregación MongoDB, distribuidas en 10 por integrante:
+
+### Karla Natalia Jara Álvarez - Usuarios
+
+1. `karlaUsersByStatus`
+2. `karlaUsersByOccupation`
+3. `karlaUsersByPostalCode`
+4. `karlaPendingUsersByOccupation`
+5. `karlaApprovedUsersByWorkplace`
+6. `karlaDuplicateFullNames`
+7. `karlaCredentialUsersByPostalCode`
+8. `karlaUsersWithoutPhone`
+9. `karlaUsersByPostalAndOccupation`
+10. `karlaUsersWithLoansByStatus`
+
+### Francisco Javier Bustamante Miramontes - Préstamos
+
+1. `franciscoLoansByStatus`
+2. `franciscoLoansByMonth`
+3. `franciscoTopBorrowedBooks`
+4. `franciscoMostActiveBorrowers`
+5. `franciscoOverdueActiveLoans`
+6. `franciscoLoansByReturnMonth`
+7. `franciscoAverageDurationByMonth`
+8. `franciscoLoanStatusByBorrower`
+9. `franciscoReturnedRateByMonth`
+10. `franciscoTopLibraryNumbers`
+
+### Saúl Esparza Guevara - Catálogo
+
+1. `saulTopAuthors`
+2. `saulBooksByLocationPrefix`
+3. `saulBooksByVolume`
+4. `saulBooksByAvailability`
+5. `saulBooksByClassifierRange`
+6. `saulLocationsWithHighestStock`
+7. `saulAuthorLocationMatrix`
+8. `saulTopClassifiers`
+9. `saulSubjectDistribution`
+10. `saulAuthorsWithLowAvailability`

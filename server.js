@@ -66,6 +66,13 @@ const typeDefs = `#graphql
     message: String
   }
 
+  type ComplexStat {
+    label: String!
+    value: Float!
+    count: Int!
+    details: String
+  }
+
   input UserInput {
     fullName: String!
     idDocument: String!
@@ -136,6 +143,39 @@ const typeDefs = `#graphql
     users(limit: Int): [User!]!
     loans(limit: Int): [Loan!]!
     mongoStatus: MongoStatus!
+
+    karlaUsersByStatus: [ComplexStat!]!
+    karlaUsersByOccupation: [ComplexStat!]!
+    karlaUsersByPostalCode: [ComplexStat!]!
+    karlaPendingUsersByOccupation: [ComplexStat!]!
+    karlaApprovedUsersByWorkplace: [ComplexStat!]!
+    karlaDuplicateFullNames: [ComplexStat!]!
+    karlaCredentialUsersByPostalCode: [ComplexStat!]!
+    karlaUsersWithoutPhone: [ComplexStat!]!
+    karlaUsersByPostalAndOccupation: [ComplexStat!]!
+    karlaUsersWithLoansByStatus: [ComplexStat!]!
+
+    franciscoLoansByStatus: [ComplexStat!]!
+    franciscoLoansByMonth: [ComplexStat!]!
+    franciscoTopBorrowedBooks: [ComplexStat!]!
+    franciscoMostActiveBorrowers: [ComplexStat!]!
+    franciscoOverdueActiveLoans: [ComplexStat!]!
+    franciscoLoansByReturnMonth: [ComplexStat!]!
+    franciscoAverageDurationByMonth: [ComplexStat!]!
+    franciscoLoanStatusByBorrower: [ComplexStat!]!
+    franciscoReturnedRateByMonth: [ComplexStat!]!
+    franciscoTopLibraryNumbers: [ComplexStat!]!
+
+    saulTopAuthors: [ComplexStat!]!
+    saulBooksByLocationPrefix: [ComplexStat!]!
+    saulBooksByVolume: [ComplexStat!]!
+    saulBooksByAvailability: [ComplexStat!]!
+    saulBooksByClassifierRange: [ComplexStat!]!
+    saulLocationsWithHighestStock: [ComplexStat!]!
+    saulAuthorLocationMatrix: [ComplexStat!]!
+    saulTopClassifiers: [ComplexStat!]!
+    saulSubjectDistribution: [ComplexStat!]!
+    saulAuthorsWithLowAvailability: [ComplexStat!]!
   }
 
   type Mutation {
@@ -166,6 +206,17 @@ async function filterCatalog(field, query) {
     : source;
 }
 
+async function runComplexAggregation(collectionName, pipeline) {
+  if (!mongoDb) return [];
+  const rows = await mongoDb.collection(collectionName).aggregate(pipeline).toArray();
+  return rows.map(row => ({
+    label: String(row.label ?? row._id ?? "Sin datos"),
+    value: Number(row.value ?? row.count ?? 0),
+    count: Number(row.count ?? 0),
+    details: row.details ? String(row.details) : null
+  }));
+}
+
 const resolvers = {
   Query: {
     books: (_parent, args) => filterCatalog(args.field, args.query),
@@ -181,7 +232,198 @@ const resolvers = {
     mongoStatus: () => ({
       connected: mongoConnected,
       database: mongoConnected ? mongoDb?.databaseName || null : null
-    })
+    }),
+
+    karlaUsersByStatus: () => runComplexAggregation("users", [
+      { $group: { _id: "$status", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { count: -1 } }
+    ]),
+    karlaUsersByOccupation: () => runComplexAggregation("users", [
+      { $group: { _id: "$occupation", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { count: -1 } }
+    ]),
+    karlaUsersByPostalCode: () => runComplexAggregation("users", [
+      { $match: { postalCode: { $ne: null } } },
+      { $group: { _id: "$postalCode", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { count: -1 } },
+      { $limit: 20 }
+    ]),
+    karlaPendingUsersByOccupation: () => runComplexAggregation("users", [
+      { $match: { status: "pending" } },
+      { $group: { _id: "$occupation", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { count: -1 } }
+    ]),
+    karlaApprovedUsersByWorkplace: () => runComplexAggregation("users", [
+      { $match: { status: "approved" } },
+      { $group: { _id: "$workplace", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { count: -1 } },
+      { $limit: 20 }
+    ]),
+    karlaDuplicateFullNames: () => runComplexAggregation("users", [
+      { $group: { _id: "$fullName", count: { $sum: 1 } } },
+      { $match: { count: { $gt: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { count: -1 } }
+    ]),
+    karlaCredentialUsersByPostalCode: () => runComplexAggregation("users", [
+      { $match: { status: "approved", credentialNumber: { $ne: null } } },
+      { $group: { _id: "$postalCode", credentialed: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$credentialed", count: "$credentialed" } },
+      { $sort: { count: -1 } },
+      { $limit: 20 }
+    ]),
+    karlaUsersWithoutPhone: () => runComplexAggregation("users", [
+      { $match: { $or: [{ phone: { $exists: false } }, { phone: "" }, { phone: null }] } },
+      { $group: { _id: "$occupation", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { count: -1 } }
+    ]),
+    karlaUsersByPostalAndOccupation: () => runComplexAggregation("users", [
+      { $group: { _id: { postalCode: "$postalCode", occupation: "$occupation" }, count: { $sum: 1 } } },
+      { $project: { _id: 0, label: { $concat: ["$_id.postalCode", " - ", "$_id.occupation"] }, value: "$count", count: 1 } },
+      { $sort: { count: -1 } },
+      { $limit: 30 }
+    ]),
+    karlaUsersWithLoansByStatus: () => runComplexAggregation("users", [
+      { $lookup: { from: "loans", localField: "libraryNumber", foreignField: "libraryNumber", as: "loans" } },
+      { $unwind: "$loans" },
+      { $group: { _id: "$loans.status", users: { $addToSet: "$id" } } },
+      { $project: { _id: 0, label: "$_id", value: { $size: "$users" }, count: { $size: "$users" } } },
+      { $sort: { count: -1 } }
+    ]),
+
+    franciscoLoansByStatus: () => runComplexAggregation("loans", [
+      { $group: { _id: "$status", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { count: -1 } }
+    ]),
+    franciscoLoansByMonth: () => runComplexAggregation("loans", [
+      { $project: { month: { $substr: ["$loanDate", 0, 7] } } },
+      { $group: { _id: "$month", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { label: 1 } }
+    ]),
+    franciscoTopBorrowedBooks: () => runComplexAggregation("loans", [
+      { $group: { _id: "$bookId", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+      { $lookup: { from: "books", localField: "_id", foreignField: "id", as: "book" } },
+      { $unwind: { path: "$book", preserveNullAndEmptyArrays: true } },
+      { $project: { _id: 0, label: { $ifNull: ["$book.title", "$_id"] }, value: "$count", count: 1 } }
+    ]),
+    franciscoMostActiveBorrowers: () => runComplexAggregation("loans", [
+      { $group: { _id: "$libraryNumber", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+      { $lookup: { from: "users", localField: "_id", foreignField: "libraryNumber", as: "user" } },
+      { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+      { $project: { _id: 0, label: { $ifNull: ["$user.fullName", "$_id"] }, value: "$count", count: 1 } }
+    ]),
+    franciscoOverdueActiveLoans: () => runComplexAggregation("loans", [
+      { $match: { status: "active", returnDate: { $lt: "2026-11-23" } } },
+      { $group: { _id: "$libraryNumber", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { count: -1 } },
+      { $limit: 20 }
+    ]),
+    franciscoLoansByReturnMonth: () => runComplexAggregation("loans", [
+      { $project: { month: { $substr: ["$returnDate", 0, 7] } } },
+      { $group: { _id: "$month", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { label: 1 } }
+    ]),
+    franciscoAverageDurationByMonth: () => runComplexAggregation("loans", [
+      { $project: {
+        month: { $substr: ["$loanDate", 0, 7] },
+        duration: { $divide: [{ $subtract: [{ $dateFromString: { dateString: "$returnDate" } }, { $dateFromString: { dateString: "$loanDate" } }] }, 86400000] }
+      } },
+      { $group: { _id: "$month", averageDays: { $avg: "$duration" }, count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: { $round: ["$averageDays", 1] }, count: 1 } },
+      { $sort: { label: 1 } }
+    ]),
+    franciscoLoanStatusByBorrower: () => runComplexAggregation("loans", [
+      { $lookup: { from: "users", localField: "libraryNumber", foreignField: "libraryNumber", as: "borrower" } },
+      { $unwind: { path: "$borrower", preserveNullAndEmptyArrays: true } },
+      { $group: { _id: { borrower: "$borrower.fullName", status: "$status" }, count: { $sum: 1 } } },
+      { $project: { _id: 0, label: { $concat: [{ $ifNull: ["$_id.borrower", "Sin usuario"] }, " - ", "$_id.status"] }, value: "$count", count: 1 } },
+      { $sort: { count: -1 } },
+      { $limit: 30 }
+    ]),
+    franciscoReturnedRateByMonth: () => runComplexAggregation("loans", [
+      { $project: { month: { $substr: ["$loanDate", 0, 7] }, returned: { $cond: [{ $eq: ["$status", "returned"] }, 1, 0] } } },
+      { $group: { _id: "$month", count: { $sum: 1 }, returned: { $sum: "$returned" } } },
+      { $project: { _id: 0, label: "$_id", value: { $round: [{ $multiply: [{ $divide: ["$returned", "$count"] }, 100] }, 1] }, count: 1 } },
+      { $sort: { label: 1 } }
+    ]),
+    franciscoTopLibraryNumbers: () => runComplexAggregation("loans", [
+      { $group: { _id: "$libraryNumber", active: { $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] } }, total: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$total", count: "$active", details: { $concat: ["Activos: ", { $toString: "$active" }] } } },
+      { $sort: { value: -1 } },
+      { $limit: 20 }
+    ]),
+
+    saulTopAuthors: () => runComplexAggregation("books", [
+      { $group: { _id: "$author", count: { $sum: 1 }, stock: { $sum: "$total" } } },
+      { $project: { _id: 0, label: "$_id", value: "$stock", count: "$count", details: { $concat: ["Ejemplares: ", { $toString: "$stock" }] } } },
+      { $sort: { value: -1 } }
+    ]),
+    saulBooksByLocationPrefix: () => runComplexAggregation("books", [
+      { $project: { prefix: { $substr: ["$location", 11, 1] } } },
+      { $group: { _id: "$prefix", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { count: -1 } }
+    ]),
+    saulBooksByVolume: () => runComplexAggregation("books", [
+      { $group: { _id: "$volume", count: { $sum: 1 }, stock: { $sum: "$total" } } },
+      { $project: { _id: 0, label: "$_id", value: "$stock", count: 1 } },
+      { $sort: { value: -1 } }
+    ]),
+    saulBooksByAvailability: () => runComplexAggregation("books", [
+      { $bucket: { groupBy: "$total", boundaries: [1, 3, 5, 7, 9], default: "9+", output: { count: { $sum: 1 }, stock: { $sum: "$total" } } } },
+      { $project: { _id: 0, label: { $toString: "$_id" }, value: "$stock", count: "$count" } }
+    ]),
+    saulBooksByClassifierRange: () => runComplexAggregation("books", [
+      { $project: { range: { $substr: ["$classifier", 0, 1] } } },
+      { $group: { _id: "$range", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: { $concat: ["$_id", "00 - ", "$_id", "99"] }, value: "$count", count: 1 } },
+      { $sort: { label: 1 } }
+    ]),
+    saulLocationsWithHighestStock: () => runComplexAggregation("books", [
+      { $group: { _id: "$location", count: { $sum: 1 }, stock: { $sum: "$total" } } },
+      { $project: { _id: 0, label: "$_id", value: "$stock", count: 1 } },
+      { $sort: { value: -1 } },
+      { $limit: 20 }
+    ]),
+    saulAuthorLocationMatrix: () => runComplexAggregation("books", [
+      { $project: { author: "$author", prefix: { $substr: ["$location", 11, 1] }, total: "$total" } },
+      { $group: { _id: { author: "$author", location: "$prefix" }, count: { $sum: 1 }, stock: { $sum: "$total" } } },
+      { $project: { _id: 0, label: { $concat: ["$_id.author", " - ", "$_id.location"] }, value: "$stock", count: "$count" } },
+      { $sort: { value: -1 } },
+      { $limit: 30 }
+    ]),
+    saulTopClassifiers: () => runComplexAggregation("books", [
+      { $group: { _id: "$classifier", count: { $sum: 1 }, stock: { $sum: "$total" } } },
+      { $project: { _id: 0, label: "$_id", value: "$stock", count: 1 } },
+      { $sort: { count: -1 } },
+      { $limit: 20 }
+    ]),
+    saulSubjectDistribution: () => runComplexAggregation("books", [
+      { $project: { subject: { $arrayElemAt: [{ $split: ["$title", " de la Biblioteca"] }, 0] } } },
+      { $group: { _id: "$subject", count: { $sum: 1 } } },
+      { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
+      { $sort: { count: -1 } }
+    ]),
+    saulAuthorsWithLowAvailability: () => runComplexAggregation("books", [
+      { $group: { _id: "$author", averageStock: { $avg: "$total" }, stock: { $sum: "$total" }, count: { $sum: 1 } } },
+      { $match: { averageStock: { $lt: 5 } } },
+      { $project: { _id: 0, label: "$_id", value: { $round: ["$averageStock", 2] }, count: "$count", details: { $concat: ["Stock total: ", { $toString: "$stock" }] } } },
+      { $sort: { value: 1 } }
+    ])
   },
   Mutation: {
     createUser: async (_parent, { input }) => {
