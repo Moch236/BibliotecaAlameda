@@ -558,9 +558,20 @@ async function connectMongo(uri, databaseName) {
   }
 
   const candidates = [uri];
-  if (process.env.MONGODB_USERNAME && process.env.MONGODB_PASSWORD) {
-    const username = encodeURIComponent(process.env.MONGODB_USERNAME);
-    const password = encodeURIComponent(process.env.MONGODB_PASSWORD);
+  let username = process.env.MONGODB_USERNAME;
+  let password = process.env.MONGODB_PASSWORD;
+
+  if (!username || !password) {
+    const match = uri.match(/^mongodb(?:\+srv)?:\/\/([^:@]+):([^@]+)@/);
+    if (match) {
+      username = decodeURIComponent(match[1]);
+      password = decodeURIComponent(match[2]);
+    }
+  }
+
+  if (username && password) {
+    username = encodeURIComponent(username);
+    password = encodeURIComponent(password);
     candidates.push(
       `mongodb+srv://${username}:${password}@clusterlabo.voj4kvr.mongodb.net/biblioteca_alameda?retryWrites=true&w=majority`
     );
