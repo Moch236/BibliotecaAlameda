@@ -572,9 +572,14 @@ async function connectMongo(uri, databaseName) {
   if (username && password) {
     username = encodeURIComponent(username);
     password = encodeURIComponent(password);
-    candidates.push(
-      `mongodb+srv://${username}:${password}@clusterlabo.voj4kvr.mongodb.net/biblioteca_alameda?retryWrites=true&w=majority`
-    );
+    const srvUri = `mongodb+srv://${username}:${password}@clusterlabo.voj4kvr.mongodb.net/biblioteca_alameda?retryWrites=true&w=majority`;
+    if (uri.startsWith("mongodb+srv://")) {
+      candidates.push(
+        `mongodb://${username}:${password}@ac-fr60g4z-shard-00-00.voj4kvr.mongodb.net:27017,ac-fr60g4z-shard-00-01.voj4kvr.mongodb.net:27017,ac-fr60g4z-shard-00-02.voj4kvr.mongodb.net:27017/biblioteca_alameda?ssl=true&authSource=admin&retryWrites=true&w=majority`
+      );
+    } else {
+      candidates.unshift(srvUri);
+    }
   }
 
   let lastError = null;
