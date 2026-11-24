@@ -693,6 +693,7 @@ async function handleApi(req, res, url) {
 
 async function createServer() {
   const app = express();
+  app.set("trust proxy", 1);
 
   app.use(session({
     name: "biblioteca.sid",
