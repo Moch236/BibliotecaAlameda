@@ -556,8 +556,31 @@ async function connectMongo(uri, databaseName) {
     await mongoClient.close();
     mongoConnected = false;
   }
-  mongoClient = new MongoClient(uri);
-  await mongoClient.connect();
+
+  const candidates = [uri];
+  if (process.env.MONGODB_USERNAME && process.env.MONGODB_PASSWORD) {
+    const username = encodeURIComponent(process.env.MONGODB_USERNAME);
+    const password = encodeURIComponent(process.env.MONGODB_PASSWORD);
+    candidates.push(
+      `mongodb+srv://${username}:${password}@clusterlabo.voj4kvr.mongodb.net/biblioteca_alameda?retryWrites=true&w=majority`
+    );
+  }
+
+  let lastError = null;
+  for (const candidate of candidates) {
+    try {
+      const client = new MongoClient(candidate, { serverSelectionTimeoutMS: 15000 });
+      await client.connect();
+      await client.db(databaseName || "biblioteca_alameda").admin().ping();
+      mongoClient = client;
+      break;
+    } catch (error) {
+      lastError = error;
+      if (mongoClient) await mongoClient.close();
+    }
+  }
+
+  if (!mongoClient) throw lastError || new Error("No fue posible conectar a MongoDB Atlas");
   mongoDb = mongoClient.db(databaseName || "biblioteca_alameda");
   mongoConnected = true;
   return mongoDb;
