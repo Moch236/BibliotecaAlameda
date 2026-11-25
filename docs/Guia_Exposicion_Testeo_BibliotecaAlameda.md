@@ -1,8 +1,18 @@
 # Guía de exposición y testeo - Biblioteca Alameda
 
-## 1. Objetivo
+## 1. Objetivo y reglas de tiempo
 
-Esta guía explica qué debe decir y demostrar cada integrante durante la exposición y el testeo. El equipo debe ensayar una presentación entre 12 y 15 minutos y conservar una ruta local alternativa por si falla Internet.
+Preparar una exposición clara, comprobable y repartida entre los tres integrantes. La exposición del equipo dura **10 minutos exactos**; el minuto para el cambio entre equipos es aparte y no debe usarse para extender la presentación. Ensayen con cronómetro y dejen listas las pantallas antes de comenzar.
+
+La docente también solicita:
+
+- Iniciar con una pregunta detonadora.
+- Presentar el branding del equipo, diseñado en Canva.
+- Mostrar un fragmento de la entrevista y explicar sus conclusiones.
+- Explicar y justificar el uso de IA y el tipo de base de datos NoSQL.
+- Asegurar la participación de todos los integrantes.
+- Asistir formalmente vestidos; todo el grupo debe asistir a la coevaluación y llevar bolígrafo.
+- Llevar un dulce o paleta para cada compañero y compañera asistentes.
 
 ## 2. Integrantes
 
@@ -10,7 +20,16 @@ Esta guía explica qué debe decir y demostrar cada integrante durante la exposi
 - Francisco Javier Bustamante Miramontes
 - Saúl Esparza Guevara
 
-## 3. Preparación antes de comenzar
+## 3. Branding y preparación de Canva
+
+Diseñen en Canva una identidad sencilla y consistente para el equipo: nombre o logotipo, paleta de colores y estilo visual aplicados a todas las diapositivas. La guía de documentos del proyecto ya usa vino, marfil y dorado tenue como referencia visual; pueden mantener esa línea, pero el branding final lo define el equipo.
+
+- Usen tipografías legibles y de buen tamaño; eviten fuentes decorativas en párrafos.
+- Mantengan buen contraste entre texto y fondo, y poco texto por diapositiva.
+- Si usan IA para crear recursos visuales o texto, revísenlos, corrijan errores y asegúrense de que sean legibles y adecuados. No presenten contenido generado sin verificarlo.
+- Incluyan únicamente imágenes, datos y fragmentos de entrevista para los que tengan autorización.
+
+## 4. Preparación antes de comenzar
 
 Antes de la presentación:
 
@@ -25,9 +44,13 @@ Antes de la presentación:
 7. Mostrar la cuenta administrativa sin mostrar su contraseña.
 8. Verificar una consulta por integrante.
 9. Preparar capturas del CRUD y de las consultas.
-10. Tener el documento técnico y el PDF disponibles.
+10. Tener la presentación de Canva y el documento técnico disponibles.
+11. Seleccionar y probar el fragmento de entrevista; dejarlo cargado en el punto exacto y tener una copia local.
+12. Confirmar que el fragmento y las conclusiones caben en el tiempo asignado.
+13. Llevar bolígrafo cada integrante y dulces o paletas para los asistentes.
+14. Asistir con vestimenta formal.
 
-## 4. Distribución de responsabilidades
+## 5. Distribución de responsabilidades
 
 ### Karla Natalia Jara Álvarez
 
@@ -122,7 +145,46 @@ Demostración recomendada:
 - Editar y eliminar el libro temporal.
 - Mostrar que el dato cambia en MongoDB.
 
-## 5. Guion sugerido
+## 6. Guion cronometrado de 10 minutos
+
+Los tiempos son límites acumulados. Si el video no está listo para reproducirse al llegar su turno, salten al resumen de la entrevista; no gasten el tiempo buscando el archivo.
+
+| Tiempo | Quién | Contenido |
+|---|---|---|
+| 0:00–0:35 | Karla | Pregunta detonadora y problema que aborda el proyecto. |
+| 0:35–1:20 | Karla | Fragmento seleccionado de la entrevista (máximo 45 segundos). |
+| 1:20–1:50 | Karla | Qué aprendieron de la entrevista y cómo influyó en la propuesta. |
+| 1:50–2:40 | Saúl | Solución, arquitectura y recorrido breve por el branding del equipo. |
+| 2:40–3:30 | Saúl | Por qué MongoDB: base documental NoSQL, documentos flexibles y agregaciones adecuadas para catálogo, usuarios y préstamos. |
+| 3:30–4:20 | Francisco | Uso de IA: explicar en qué tareas concretas apoyó el equipo, qué verificaron y qué decisiones siguieron siendo del equipo. |
+| 4:20–6:20 | Saúl | Demostración breve del catálogo, GraphQL y persistencia en MongoDB. |
+| 6:20–7:05 | Karla | Demostración breve de usuarios y una consulta asignada. |
+| 7:05–7:50 | Francisco | Demostración breve de préstamos y una consulta asignada. |
+| 7:50–8:35 | Los tres | Cada integrante dice en unos 15 segundos un resultado o aprendizaje de su parte. |
+| 8:35–9:35 | Karla y Francisco | Conclusiones de la entrevista, valor de la solución para la Biblioteca y limitaciones o mejoras futuras. |
+| 9:35–10:00 | Los tres | Cierre y agradecimiento. |
+
+El tiempo de 1 minuto para el cambio de equipo ocurre **después** de estos 10 minutos. Dejen de presentar al llegar a 10:00 para que el siguiente equipo pueda prepararse.
+
+### Pregunta detonadora sugerida
+
+> ¿Cómo puede una biblioteca administrar de forma más ordenada su catálogo, usuarios y préstamos, y obtener información útil para tomar decisiones?
+
+Adáptenla a lo que la persona entrevistada realmente comentó; no atribuyan a la entrevista problemas o necesidades que no expresó.
+
+### Explicación honesta del uso de IA
+
+En este proyecto la IA se utilizó como apoyo durante el desarrollo —por ejemplo, para proponer y revisar cambios de código, ayudar a diagnosticar errores y preparar documentación—, no como una función generativa integrada que use el público. Expliquen solo las tareas que el equipo efectivamente realizó con IA y cómo verificaron cada resultado mediante revisión humana y pruebas. No digan que el sistema tiene recomendaciones inteligentes, chatbot u otra función de IA si no está implementada.
+
+Guion sugerido:
+
+> “Usamos IA como apoyo para acelerar algunas tareas de desarrollo y documentación. El equipo revisó y probó las propuestas, corrigió lo necesario y mantuvo la responsabilidad sobre las decisiones. La IA no sustituye la base de datos ni es una función que el usuario final utilice dentro de la aplicación.”
+
+### Justificación de MongoDB
+
+Descríbanla como **base de datos NoSQL documental**. Los registros de libros, usuarios y préstamos se almacenan como documentos; este modelo ofrece flexibilidad para sus campos y MongoDB permite ejecutar agregaciones para obtener estadísticas. Aclaren que las relaciones entre entidades se resuelven desde la aplicación y las consultas, no mediante tablas relacionales tradicionales.
+
+## 7. Guion sugerido
 
 ### Apertura
 
@@ -195,7 +257,7 @@ Decir:
 
 "El proyecto cumple el almacenamiento masivo, GraphQL, CRUD por integrante, consultas complejas, autenticación y despliegue público. La siguiente extensión sería integrar autenticación avanzada y el modelo formal según las necesidades de la Biblioteca."
 
-## 6. Ejecución de testeo
+## 8. Ejecución de testeo
 
 ### Parte 1: Estado del sistema
 
@@ -253,7 +315,7 @@ Registrar:
 - Resultado.
 - Evidencia.
 
-## 7. Consultas de ejemplo en Apollo Sandbox
+## 9. Consultas de ejemplo en Apollo Sandbox
 
 ### Ejemplo: usuarios por estado
 
@@ -291,7 +353,7 @@ query {
 }
 ```
 
-## 8. Plan de pruebas por integrante
+## 10. Plan de pruebas por integrante
 
 ### Karla
 
@@ -315,7 +377,7 @@ query {
 - Ejecutar diez consultas del catálogo.
 - Explicar conexión y despliegue.
 
-## 9. Escenario de fallo
+## 11. Escenario de fallo
 
 Si falla la red pública:
 
@@ -342,7 +404,7 @@ Si falla MongoDB:
 3. Usar datos locales de demostración sólo si ya están preparados.
 4. Explicar el riesgo sin ocultar la falla.
 
-## 10. Evidencia que debe guardarse
+## 12. Evidencia que debe guardarse
 
 - Captura del despliegue en Render.
 - Captura de MongoDB conectado.
@@ -352,9 +414,22 @@ Si falla MongoDB:
 - Capturas de al menos una consulta por integrante.
 - Captura del testeo completo.
 - Grabación o enlace de prueba si está disponible.
+- Fragmento de entrevista utilizado y autorización correspondiente.
+- Diapositivas con el branding del equipo.
+- Conclusiones acordadas a partir de la entrevista.
 
-## 11. Lista final antes de empezar
+## 13. Lista final antes de empezar
 
+- [ ] Pregunta detonadora lista y ensayada.
+- [ ] Presentación de Canva con branding consistente y texto legible.
+- [ ] Exposición ensayada con cronómetro: máximo 10 minutos.
+- [ ] Fragmento de entrevista probado y conclusiones preparadas.
+- [ ] Explicación veraz del uso de IA y de MongoDB como NoSQL documental.
+- [ ] Todos los integrantes tienen una participación y saben cuándo intervenir.
+- [ ] Minuto de cambio considerado aparte de los 10 minutos.
+- [ ] Todo el grupo asistirá a la coevaluación y llevará bolígrafo.
+- [ ] Dulces o paletas preparados para las compañeras y compañeros asistentes.
+- [ ] Vestimenta formal.
 - [ ] Dominio público abierto.
 - [ ] MongoDB conectado.
 - [ ] Login probado.
@@ -367,6 +442,6 @@ Si falla MongoDB:
 - [ ] Servidor local preparado.
 - [ ] Contraseña temporal cambiada.
 
-## 12. Mensaje final
+## 14. Mensaje final
 
-La presentación debe evitar improvisar detalles técnicos. Cada integrante explica una parte específica, demuestra su consulta asignada y entrega el turno al siguiente integrante.
+La presentación debe ser precisa y honesta: cada integrante explica su parte, demuestra una función y respeta el cronómetro. No afirmen que una capacidad existe si no pueden mostrarla funcionando.
