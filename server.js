@@ -81,6 +81,7 @@ const typeDefs = `#graphql
   type User {
     id: ID!
     fullName: String!
+    libraryNumber: String
     idDocument: String!
     address: String!
     postalCode: String
@@ -194,10 +195,13 @@ const typeDefs = `#graphql
   }
 
   type Query {
-    books(field: String, query: String): [Book!]!
+    books(field: String, query: String, limit: Int, offset: Int): [Book!]!
+    bookCount(field: String, query: String): Int!
     pendingUsers: [User!]!
-    users(limit: Int): [User!]!
-    loans(limit: Int): [Loan!]!
+    users(limit: Int, offset: Int, query: String): [User!]!
+    userCount(query: String): Int!
+    loans(limit: Int, offset: Int, query: String): [Loan!]!
+    loanCount(query: String): Int!
     mongoStatus: MongoStatus!
     authStatus: AuthResult!
 
@@ -251,18 +255,44 @@ const typeDefs = `#graphql
   }
 `;
 
-async function filterCatalog(field, query) {
-  const normalized = (query || "").trim().toLowerCase();
-  const source = mongoDb ? await mongoDb.collection("books").find({}).toArray() : catalog;
-  return normalized
-    ? source.filter(book => {
-        const value = field === "title" ? book.title
-          : field === "author" ? book.author
-          : field === "classifier" ? book.classifier
-          : `${book.title} ${book.author} ${book.classifier}`;
-        return value.toLowerCase().includes(normalized);
-      })
-    : source;
+function searchFilter(fields, query) {
+  const normalized = String(query || "").trim();
+  if (!normalized) return {};
+  const pattern = new RegExp(normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+  return { $or: fields.map(field => ({ [field]: pattern })) };
+}
+
+function pageValues(limit, offset, defaultLimit = 100) {
+  return {
+    limit: Math.min(Math.max(Number.isInteger(limit) ? limit : defaultLimit, 1), 100),
+    offset: Math.max(Number.isInteger(offset) ? offset : 0, 0)
+  };
+}
+
+function catalogFilter(field, query) {
+  const fields = ["title", "author", "classifier"].includes(field) ? [field] : ["title", "author", "classifier"];
+  return searchFilter(fields, query);
+}
+
+async function filterCatalog(field, query, limit, offset) {
+  const filter = catalogFilter(field, query);
+  const page = pageValues(limit, offset);
+  if (mongoDb) {
+    let cursor = mongoDb.collection("books").find(filter).sort({ title: 1 });
+    if (limit !== undefined) cursor = cursor.skip(page.offset).limit(page.limit);
+    return cursor.toArray();
+  }
+
+  const source = catalog.filter(book => {
+    const normalized = String(query || "").trim().toLowerCase();
+    if (!normalized) return true;
+    const values = field === "title" ? [book.title]
+      : field === "author" ? [book.author]
+      : field === "classifier" ? [book.classifier]
+      : [book.title, book.author, book.classifier];
+    return values.some(value => value.toLowerCase().includes(normalized));
+  }).sort((a, b) => a.title.localeCompare(b.title));
+  return limit === undefined ? source : source.slice(page.offset, page.offset + page.limit);
 }
 
 async function runComplexAggregation(collectionName, pipeline) {
@@ -283,18 +313,86 @@ function requireAdmin(context) {
   }
 }
 
+function validateLoan(input) {
+  const { title, loanDate, returnDate, libraryNumber, status } = input;
+  if (!title?.trim() || !loanDate || !returnDate || !libraryNumber?.trim()) {
+    throw new Error("Complete todos los datos de la solicitud");
+  }
+  const isCalendarDate = value => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  };
+  if (!isCalendarDate(loanDate) || !isCalendarDate(returnDate)) {
+    throw new Error("Use fechas válidas en formato AAAA-MM-DD");
+  }
+  if (returnDate < loanDate) {
+    throw new Error("La fecha de devolución no puede ser anterior a la fecha del préstamo");
+  }
+  if (status !== undefined && !["active", "returned"].includes(status)) {
+    throw new Error("El estado del préstamo debe ser active o returned");
+  }
+}
+
 const resolvers = {
   Query: {
-    books: (_parent, args) => filterCatalog(args.field, args.query),
+    books: (_parent, args) => filterCatalog(args.field, args.query, args.limit, args.offset),
+    bookCount: (_parent, args) => mongoDb
+      ? mongoDb.collection("books").countDocuments(catalogFilter(args.field, args.query))
+      : catalog.filter(book => {
+          const normalized = String(args.query || "").trim().toLowerCase();
+          if (!normalized) return true;
+          const values = args.field === "title" ? [book.title]
+            : args.field === "author" ? [book.author]
+            : args.field === "classifier" ? [book.classifier]
+            : [book.title, book.author, book.classifier];
+          return values.some(value => value.toLowerCase().includes(normalized));
+        }).length,
     pendingUsers: async () => mongoDb
       ? mongoDb.collection("users").find({ status: "pending" }).toArray()
       : users.filter(user => user.status === "pending"),
-    users: async (_parent, args) => mongoDb
-      ? mongoDb.collection("users").find({}).limit(args.limit || 100).toArray()
-      : users.slice(0, args.limit || 100),
-    loans: async (_parent, args) => mongoDb
-      ? mongoDb.collection("loans").find({}).limit(args.limit || 100).toArray()
-      : loans.slice(0, args.limit || 100),
+    users: async (_parent, args) => {
+      const filter = searchFilter(["fullName", "email", "libraryNumber", "status"], args.query);
+      const page = pageValues(args.limit, args.offset);
+      return mongoDb
+        ? mongoDb.collection("users").find(filter).skip(page.offset).limit(page.limit).toArray()
+        : users.filter(user => {
+            const normalized = String(args.query || "").trim().toLowerCase();
+            return !normalized || [user.fullName, user.email, user.libraryNumber, user.status]
+              .some(value => String(value || "").toLowerCase().includes(normalized));
+          }).slice(page.offset, page.offset + page.limit);
+    },
+    userCount: (_parent, args) => {
+      const filter = searchFilter(["fullName", "email", "libraryNumber", "status"], args.query);
+      return mongoDb
+        ? mongoDb.collection("users").countDocuments(filter)
+        : users.filter(user => {
+            const normalized = String(args.query || "").trim().toLowerCase();
+            return !normalized || [user.fullName, user.email, user.libraryNumber, user.status]
+              .some(value => String(value || "").toLowerCase().includes(normalized));
+          }).length;
+    },
+    loans: async (_parent, args) => {
+      const filter = searchFilter(["title", "libraryNumber", "status"], args.query);
+      const page = pageValues(args.limit, args.offset);
+      return mongoDb
+        ? mongoDb.collection("loans").find(filter).skip(page.offset).limit(page.limit).toArray()
+        : loans.filter(loan => {
+            const normalized = String(args.query || "").trim().toLowerCase();
+            return !normalized || [loan.title, loan.libraryNumber, loan.status]
+              .some(value => String(value || "").toLowerCase().includes(normalized));
+          }).slice(page.offset, page.offset + page.limit);
+    },
+    loanCount: (_parent, args) => {
+      const filter = searchFilter(["title", "libraryNumber", "status"], args.query);
+      return mongoDb
+        ? mongoDb.collection("loans").countDocuments(filter)
+        : loans.filter(loan => {
+            const normalized = String(args.query || "").trim().toLowerCase();
+            return !normalized || [loan.title, loan.libraryNumber, loan.status]
+              .some(value => String(value || "").toLowerCase().includes(normalized));
+          }).length;
+    },
     mongoStatus: () => ({
       connected: mongoConnected,
       database: mongoConnected ? mongoDb?.databaseName || null : null
@@ -397,7 +495,7 @@ const resolvers = {
       { $project: { _id: 0, label: { $ifNull: ["$user.fullName", "$_id"] }, value: "$count", count: 1 } }
     ]),
     franciscoOverdueActiveLoans: () => runComplexAggregation("loans", [
-      { $match: { status: "active", returnDate: { $lt: "2026-11-23" } } },
+      { $match: { status: "active", returnDate: { $lt: new Date().toISOString().slice(0, 10) } } },
       { $group: { _id: "$libraryNumber", count: { $sum: 1 } } },
       { $project: { _id: 0, label: "$_id", value: "$count", count: 1 } },
       { $sort: { count: -1 } },
@@ -535,10 +633,15 @@ const resolvers = {
       if (!user) throw new Error("Usuario no encontrado");
       if (user.status !== "approved") {
         user.status = "approved";
-        user.credentialNumber = `BA-${Date.now().toString().slice(-8)}`;
+        user.libraryNumber ||= `BA-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+        user.credentialNumber = user.libraryNumber;
         await mongoDb.collection("users").updateOne(
           { id: user.id },
-          { $set: { status: "approved", credentialNumber: user.credentialNumber } }
+          { $set: {
+            status: "approved",
+            libraryNumber: user.libraryNumber,
+            credentialNumber: user.credentialNumber
+          } }
         );
       }
       return user;
@@ -546,9 +649,7 @@ const resolvers = {
     createLoan: async (_parent, { input }, context) => {
       requireAdmin(context);
       if (!mongoDb) throw new Error("MongoDB no está disponible");
-      if (!input.title || !input.loanDate || !input.returnDate || !input.libraryNumber) {
-        throw new Error("Complete todos los datos de la solicitud");
-      }
+      validateLoan(input);
       const loan = { id: crypto.randomUUID(), ...input, status: input.status || "active" };
       await mongoDb.collection("loans").insertOne(loan);
       return loan;
@@ -574,6 +675,7 @@ const resolvers = {
       if (!mongoDb) throw new Error("MongoDB no está disponible");
       const loan = await mongoDb.collection("loans").findOne({ id });
       if (!loan) throw new Error("Préstamo no encontrado");
+      validateLoan({ ...loan, ...input });
       Object.assign(loan, input);
       await mongoDb.collection("loans").updateOne({ id }, { $set: input });
       return loan;
@@ -591,6 +693,9 @@ const resolvers = {
       if (!input.title || !input.author || !input.classifier) {
         throw new Error("Complete título, autor y clasificador");
       }
+      if (!Number.isInteger(input.total) || input.total < 0) {
+        throw new Error("La cantidad de ejemplares debe ser un entero igual o mayor que cero");
+      }
       const book = { id: `BOOK-${crypto.randomUUID()}`, ...input };
       await mongoDb.collection("books").insertOne(book);
       return book;
@@ -600,6 +705,9 @@ const resolvers = {
       if (!mongoDb) throw new Error("MongoDB no está disponible");
       const book = await mongoDb.collection("books").findOne({ id });
       if (!book) throw new Error("Libro no encontrado");
+      if (input.total !== undefined && (!Number.isInteger(input.total) || input.total < 0)) {
+        throw new Error("La cantidad de ejemplares debe ser un entero igual o mayor que cero");
+      }
       Object.assign(book, input);
       await mongoDb.collection("books").updateOne({ id }, { $set: input });
       return book;

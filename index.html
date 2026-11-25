@@ -3,139 +3,249 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Biblioteca Alameda</title>
+  <meta name="theme-color" content="#883750">
+  <meta name="description" content="Sistema de gestión de catálogo, usuarios y préstamos de Biblioteca Alameda.">
+  <title>Biblioteca Alameda | Gestión bibliotecaria</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <main class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><span>BA</span><div><strong>Biblioteca</strong><small>Alameda</small></div></div>
-      <nav aria-label="Secciones principales">
-        <button class="nav-item active" data-section="catalog">Catálogo</button>
-        <button class="nav-item" data-section="users">Usuarios</button>
-        <button class="nav-item" data-section="loans">Préstamos</button>
-        <button class="nav-item" data-section="queries">Consultas complejas</button>
+      <a class="brand" href="/" aria-label="Biblioteca Alameda, inicio">
+        <span class="brand-mark">BA</span>
+        <span class="brand-name"><strong>Biblioteca</strong><small>Alameda</small></span>
+      </a>
+      <p class="nav-caption">Administración</p>
+      <nav class="sidebar-nav" aria-label="Secciones principales">
+        <button class="nav-item active" type="button" data-section="catalog" aria-current="page">
+          <span class="nav-icon" aria-hidden="true">01</span><span>Catálogo</span>
+        </button>
+        <button class="nav-item" type="button" data-section="users">
+          <span class="nav-icon" aria-hidden="true">02</span><span>Usuarios</span>
+        </button>
+        <button class="nav-item" type="button" data-section="loans">
+          <span class="nav-icon" aria-hidden="true">03</span><span>Préstamos</span>
+        </button>
+        <button class="nav-item" type="button" data-section="queries">
+          <span class="nav-icon" aria-hidden="true">04</span><span>Consultas</span>
+        </button>
       </nav>
+      <div class="sidebar-note">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span>Gestión bibliotecaria</span>
+      </div>
     </aside>
 
     <section class="content">
       <header class="topbar">
-        <div><p class="eyebrow">Sistema de biblioteca</p><h1 id="pageTitle">Consulta de libros</h1></div>
-        <button class="profile" id="logoutButton" type="button">Cerrar sesión</button>
+        <div class="page-heading">
+          <p class="eyebrow">Sistema de biblioteca</p>
+          <h1 id="pageTitle">Catálogo</h1>
+          <p id="pageDescription" class="page-description">Busca y administra el acervo de la biblioteca.</p>
+        </div>
+        <button class="profile" id="logoutButton" type="button">Iniciar sesión</button>
       </header>
 
-      <section class="view active" id="catalog">
+      <section class="view active" id="catalog" aria-labelledby="pageTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Acervo</p>
+            <h2>Explorar catálogo</h2>
+            <p>Busca por título, autor o clasificador. Los resultados se muestran por páginas.</p>
+          </div>
+        </div>
         <form class="search-card" id="searchForm">
-          <label for="searchField">Buscar por</label>
-          <select id="searchField"><option value="title">Título</option><option value="author">Autor</option><option value="classifier">Clasificador</option></select>
-          <input id="searchQuery" type="search" placeholder="Escriba su consulta" aria-label="Consulta">
-          <button class="primary" type="submit">Consultar</button>
+          <label for="searchField">Buscar en</label>
+          <select id="searchField" name="field">
+            <option value="title">Título</option>
+            <option value="author">Autor</option>
+            <option value="classifier">Clasificador</option>
+          </select>
+          <input id="searchQuery" name="query" type="search" placeholder="Escribe para buscar…" autocomplete="off">
+          <button class="primary" type="submit">Buscar</button>
         </form>
-        <form class="card compact-form" id="bookForm">
-          <h2>Agregar libro</h2>
-          <div class="grid-four">
-            <label>Título <input name="title" required></label>
-            <label>Autor <input name="author" required></label>
-            <label>Clasificador <input name="classifier" required></label>
-            <label>Ejemplares <input name="total" type="number" min="1" value="1" required></label>
-          </div>
-          <div class="grid-two">
-            <label>Volumen <input name="volume"></label>
-            <label>Ubicación <input name="location"></label>
-          </div>
-          <button class="primary" type="submit">Agregar al catálogo</button>
-        </form>
-        <div class="results" id="catalogResults" aria-live="polite"></div>
-      </section>
 
-      <section class="view" id="users">
-        <div class="grid-two">
-          <form class="card" id="userForm">
-            <h2>Crear usuario</h2>
-            <label>Nombre completo <input name="fullName" required></label>
-            <label>Domicilio <input name="address" required></label>
-            <div class="grid-two"><label>Código Postal <input name="postalCode"></label><label>Teléfono <input name="phone"></label></div>
-            <label>Correo electrónico <input name="email" type="email"></label>
-            <div class="grid-two"><label>Ocupación <input name="occupation"></label><label>Escuela o Trabajo <input name="workplace"></label></div>
-            <label>Documento de identificación oficial <input name="idDocument" required></label>
-            <label>Comprobante de domicilio (INE)
-              <select name="addressProofType" required>
-                <option value="INE">INE</option>
-              </select>
-            </label>
-            <label>Archivo del comprobante INE <input name="addressProof" type="file" accept=".pdf,image/jpeg,image/png" required></label>
-            <label>Fotografía <input name="photo" type="file" accept="image/*"></label>
-            <label>Contacto de emergencia <input name="emergencyContact"></label>
-            <button class="primary" type="submit">Solicitar creación de usuario</button>
+        <details class="create-panel">
+          <summary><span><strong>Agregar un libro</strong><small>Incorpora un título al catálogo</small></span><span class="summary-action">Nuevo registro <b aria-hidden="true">+</b></span></summary>
+          <form class="card compact-form" id="bookForm">
+            <div class="form-grid form-grid-three">
+              <label>Título <input name="title" maxlength="200" required></label>
+              <label>Autor <input name="author" maxlength="160" required></label>
+              <label>Clasificador <input name="classifier" maxlength="80" required></label>
+              <label>Ejemplares <input name="total" type="number" min="0" step="1" value="1" required></label>
+              <label>Volumen <input name="volume" maxlength="100"></label>
+              <label>Ubicación <input name="location" maxlength="120"></label>
+            </div>
+            <div class="form-actions"><button class="primary" type="submit">Guardar libro</button></div>
           </form>
-          <article class="credential card" id="credential" aria-live="polite">
-            <p class="eyebrow">Credencial digital</p>
-            <div class="credential-head"><div class="avatar">BA</div><div><h2 id="credentialName">Usuario nuevo</h2><strong id="credentialNumber">BA—</strong></div></div>
-            <dl id="credentialData"><dt>Datos</dt><dd>Complete el formulario y espere la aprobación del administrador.</dd></dl>
-          </article>
+        </details>
+
+        <div class="list-toolbar">
+          <div><h2>Resultados</h2><p id="catalogCount" class="muted" aria-live="polite">Cargando catálogo…</p></div>
         </div>
-        <section class="card approval-card">
-          <h2>Aprobaciones de administradores</h2>
-          <p>Los usuarios pendientes no tendrán credencial hasta ser aprobados.</p>
-          <div id="pendingUsers" class="pending-users" aria-live="polite"></div>
-        </section>
-        <section class="card approval-card">
-          <h2>Usuarios registrados</h2>
-          <div id="userList" class="data-list" aria-live="polite"></div>
-        </section>
+        <div class="results" id="catalogResults" aria-live="polite" aria-busy="false"></div>
+        <div class="pagination" id="catalogPagination"></div>
       </section>
 
-      <section class="view" id="loans">
-        <form class="card loan-form" id="loanForm">
-          <h2>Solicitud de préstamo</h2>
-          <label>Título del libro <input name="title" required></label>
-          <div class="grid-two">
-            <label>Fecha de préstamo <input name="loanDate" type="date" required></label>
-            <label>Fecha de retorno <input name="returnDate" type="date" required></label>
+      <section class="view" id="users" aria-labelledby="pageTitle" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Personas</p>
+            <h2>Usuarios de la biblioteca</h2>
+            <p>Registra solicitudes, revisa pendientes y administra los perfiles.</p>
           </div>
-          <label>Número de biblioteca <input name="libraryNumber" required placeholder="Ej. BA-00125"></label>
-          <button class="primary" type="submit">Generar solicitud</button>
-        </form>
-        <div id="loanResult" class="notice" aria-live="polite"></div>
-        <section class="card approval-card">
-          <h2>Préstamos registrados</h2>
-          <div id="loanList" class="data-list" aria-live="polite"></div>
+        </div>
+        <div class="user-workspace">
+          <form class="card form-card" id="userForm">
+            <div class="card-heading"><div><p class="eyebrow">Nueva solicitud</p><h2>Registrar usuario</h2></div><span class="step-badge">01</span></div>
+            <div class="form-grid form-grid-two">
+              <label class="field-wide">Nombre completo <input name="fullName" maxlength="160" autocomplete="name" required></label>
+              <label class="field-wide">Domicilio <input name="address" maxlength="240" autocomplete="street-address" required></label>
+              <label>Código postal <input name="postalCode" inputmode="numeric" maxlength="12" autocomplete="postal-code"></label>
+              <label>Teléfono <input name="phone" type="tel" maxlength="30" autocomplete="tel"></label>
+              <label class="field-wide">Correo electrónico <input name="email" type="email" maxlength="160" autocomplete="email"></label>
+              <label>Ocupación <input name="occupation" maxlength="100"></label>
+              <label>Escuela o trabajo <input name="workplace" maxlength="140"></label>
+              <label class="field-wide">Documento de identificación <input name="idDocument" maxlength="100" required></label>
+              <label>Comprobante requerido
+                <select name="addressProofType" required><option value="INE">INE</option></select>
+              </label>
+              <label>Nombre del archivo de comprobante
+                <input name="addressProof" type="file" accept=".pdf,image/jpeg,image/png" required>
+              </label>
+              <p class="field-note field-wide">La aplicación registra el nombre del archivo seleccionado; actualmente no almacena ni transmite el contenido del documento.</p>
+              <label class="field-wide">Fotografía (opcional)
+                <input name="photo" type="file" accept="image/*">
+              </label>
+              <label class="field-wide">Contacto de emergencia (opcional) <input name="emergencyContact" maxlength="160"></label>
+            </div>
+            <div class="form-actions"><button class="primary" type="submit">Registrar solicitud</button></div>
+          </form>
+
+          <aside class="credential card" id="credential" aria-live="polite">
+            <div class="credential-top"><p class="eyebrow">Vista previa</p><span class="status-pill status-pending" id="credentialStatus">Sin solicitud</span></div>
+            <div class="credential-head"><div class="avatar" id="credentialAvatar">BA</div><div><h2 id="credentialName">Credencial digital</h2><strong id="credentialNumber">Se asignará al aprobar</strong></div></div>
+            <dl id="credentialData"><dt>Estado</dt><dd>Registra una solicitud para mostrar su resumen aquí.</dd></dl>
+            <p class="credential-footnote">La credencial se habilita después de la aprobación administrativa.</p>
+          </aside>
+        </div>
+
+        <section class="card list-card">
+          <div class="list-toolbar">
+            <div><p class="eyebrow">Revisión</p><h2>Solicitudes pendientes</h2><p class="muted">Aprueba una solicitud para asignar su credencial.</p></div>
+            <button class="secondary" type="button" id="refreshPending">Actualizar</button>
+          </div>
+          <div id="pendingUsers" class="pending-users" aria-live="polite" aria-busy="false"></div>
+        </section>
+
+        <section class="card list-card">
+          <div class="list-toolbar">
+            <div><p class="eyebrow">Directorio</p><h2>Usuarios registrados</h2><p id="userCount" class="muted" aria-live="polite">Cargando usuarios…</p></div>
+            <form class="inline-search" id="userSearchForm">
+              <label class="sr-only" for="userSearch">Buscar usuario</label>
+              <input id="userSearch" type="search" placeholder="Nombre, correo o número…" autocomplete="off">
+              <button class="secondary" type="submit">Buscar</button>
+            </form>
+          </div>
+          <div id="userList" class="data-list" aria-live="polite" aria-busy="false"></div>
+          <div class="pagination" id="userPagination"></div>
         </section>
       </section>
 
-      <section class="view" id="queries">
-        <div class="grid-three">
-          <article class="card query-card">
-            <h2>Karla - Usuarios</h2>
-            <div id="karlaQueries" class="query-buttons"></div>
-          </article>
-          <article class="card query-card">
-            <h2>Francisco - Préstamos</h2>
-            <div id="franciscoQueries" class="query-buttons"></div>
-          </article>
-          <article class="card query-card">
-            <h2>Saúl - Catálogo</h2>
-            <div id="saulQueries" class="query-buttons"></div>
-          </article>
+      <section class="view" id="loans" aria-labelledby="pageTitle" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Circulación</p>
+            <h2>Préstamos</h2>
+            <p>Registra una solicitud y da seguimiento a sus fechas y estado.</p>
+          </div>
         </div>
-        <article class="card query-results-card">
-          <h2 id="queryResultTitle">Resultado de consulta</h2>
-          <div id="complexQueryResults" class="data-list" aria-live="polite"></div>
-        </article>
+        <form class="card form-card loan-form" id="loanForm">
+          <div class="card-heading"><div><p class="eyebrow">Nueva operación</p><h2>Registrar préstamo</h2></div><span class="step-badge">01</span></div>
+          <div class="form-grid form-grid-two">
+            <label class="field-wide">Título del libro <input name="title" list="bookSuggestions" maxlength="200" required></label>
+            <datalist id="bookSuggestions"></datalist>
+            <label>Fecha de préstamo <input name="loanDate" type="date" required></label>
+            <label>Fecha de devolución <input name="returnDate" type="date" required></label>
+            <label class="field-wide">Número de biblioteca <input name="libraryNumber" list="userSuggestions" maxlength="80" placeholder="Ej. BA-00125" required></label>
+            <datalist id="userSuggestions"></datalist>
+          </div>
+          <p class="field-note">Las sugerencias se basan en los registros cargados; también puedes introducir el dato manualmente.</p>
+          <div class="form-actions"><button class="primary" type="submit">Crear préstamo</button></div>
+        </form>
+        <div id="loanResult" class="notice" role="status" aria-live="polite"></div>
+
+        <section class="card list-card">
+          <div class="list-toolbar">
+            <div><p class="eyebrow">Seguimiento</p><h2>Préstamos registrados</h2><p id="loanCount" class="muted" aria-live="polite">Cargando préstamos…</p></div>
+            <form class="inline-search" id="loanSearchForm">
+              <label class="sr-only" for="loanSearch">Buscar préstamo</label>
+              <input id="loanSearch" type="search" placeholder="Título, número o estado…" autocomplete="off">
+              <button class="secondary" type="submit">Buscar</button>
+            </form>
+          </div>
+          <div id="loanList" class="data-list" aria-live="polite" aria-busy="false"></div>
+          <div class="pagination" id="loanPagination"></div>
+        </section>
       </section>
 
+      <section class="view" id="queries" aria-labelledby="pageTitle" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Análisis</p>
+            <h2>Consultas complejas</h2>
+            <p>Selecciona un análisis para ejecutarlo sobre las colecciones de MongoDB.</p>
+          </div>
+        </div>
+        <div class="query-layout">
+          <div class="query-groups">
+            <details class="query-group" open>
+              <summary><span><strong>Karla · Usuarios</strong><small>10 consultas</small></span><span class="summary-chevron" aria-hidden="true">⌄</span></summary>
+              <div id="karlaQueries" class="query-buttons"></div>
+            </details>
+            <details class="query-group">
+              <summary><span><strong>Francisco · Préstamos</strong><small>10 consultas</small></span><span class="summary-chevron" aria-hidden="true">⌄</span></summary>
+              <div id="franciscoQueries" class="query-buttons"></div>
+            </details>
+            <details class="query-group">
+              <summary><span><strong>Saúl · Catálogo</strong><small>10 consultas</small></span><span class="summary-chevron" aria-hidden="true">⌄</span></summary>
+              <div id="saulQueries" class="query-buttons"></div>
+            </details>
+          </div>
+          <article class="card query-results-card">
+            <div class="card-heading"><div><p class="eyebrow">Resultado</p><h2 id="queryResultTitle">Selecciona una consulta</h2></div><span class="step-badge">30</span></div>
+            <p id="queryResultHelp" class="muted">Los resultados aparecerán aquí. Los agregados dependen de la conexión a MongoDB y los datos disponibles.</p>
+            <div id="complexQueryResults" class="data-list" aria-live="polite" aria-busy="false"></div>
+          </article>
+        </div>
+      </section>
+
+      <footer class="app-footer"><span>Biblioteca Alameda</span><span>Gestión clara, acervo accesible</span></footer>
     </section>
   </main>
 
-  <dialog id="loginDialog">
-    <form method="dialog" id="loginForm" class="card login-card">
-      <div class="brand centered"><span>BA</span><div><strong>Biblioteca</strong><small>Alameda</small></div></div>
-      <h2>Acceso al sistema</h2>
-      <label>Usuario <input name="username" required></label>
-      <label>Contraseña <input name="password" type="password" required></label>
-      <button class="primary" type="submit" value="login">Ingresar</button>
+  <dialog id="editDialog" class="app-dialog">
+    <form id="editForm" class="card dialog-card">
+      <div class="card-heading"><div><p class="eyebrow">Editar registro</p><h2 id="editDialogTitle">Editar</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="Cerrar">×</button></div>
+      <div id="editFields" class="form-grid form-grid-two"></div>
+      <p id="editDialogNote" class="field-note" hidden></p>
+      <div class="dialog-actions"><button class="secondary" type="button" data-close-dialog>Cancelar</button><button class="primary" type="submit">Guardar cambios</button></div>
     </form>
   </dialog>
+
+  <dialog id="loginDialog" class="app-dialog login-dialog">
+    <form id="loginForm" class="card dialog-card login-card">
+      <div class="brand login-brand"><span class="brand-mark">BA</span><span class="brand-name"><strong>Biblioteca</strong><small>Alameda</small></span></div>
+      <p class="eyebrow">Acceso administrativo</p>
+      <h2>Iniciar sesión</h2>
+      <p class="muted">Accede para administrar el catálogo, los usuarios y los préstamos.</p>
+      <label>Usuario <input name="username" autocomplete="username" required></label>
+      <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
+      <div class="dialog-actions"><button class="primary" type="submit">Ingresar</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
   <script src="/app.js"></script>
 </body>
 </html>

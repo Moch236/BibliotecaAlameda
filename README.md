@@ -23,6 +23,9 @@ Aplicación web académica para consultar y administrar el catálogo, los usuari
 - **Préstamos:** registro y administración de solicitudes y estados de préstamo.
 - **Consultas complejas:** 30 consultas de agregación MongoDB, organizadas en tres grupos de 10.
 - **Autenticación administrativa:** protege las mutaciones de administración.
+- **Interfaz adaptable:** navegación para móvil y escritorio, resultados paginados, búsqueda y formularios de edición completos.
+
+> **Alcance de documentos de usuario:** la interfaz registra el nombre del archivo seleccionado para comprobante o fotografía, pero esta versión no carga ni almacena el contenido de esos archivos.
 
 ## Tecnologías y arquitectura
 
@@ -163,6 +166,8 @@ Servicio desplegado reportado:
 - Estado de autenticación: `/api/auth/status`
 
 La disponibilidad del servicio puede variar. Comprueba los endpoints antes de utilizarlos en una demostración.
+
+El catálogo, el directorio de usuarios y los préstamos incluyen búsqueda y paginación en la interfaz. Las mutaciones administrativas requieren una sesión válida. Para crear préstamos con usuarios aprobados, utiliza el número de biblioteca asignado al aprobar la solicitud.
 
 ## Despliegue
 
