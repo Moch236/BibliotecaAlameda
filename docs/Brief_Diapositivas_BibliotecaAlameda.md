@@ -36,7 +36,8 @@ El minuto para el cambio entre equipos es aparte: **no lo incluyas dentro de los
 - Despliegue público reportado: `https://biblioteca-k76i.onrender.com` (verificar que esté activo antes de la exposición).
 - Colecciones principales: `books`, `users`, `loans`; también existe `accounts` para autenticación administrativa.
 - Proyecto reporta 1000 documentos en cada colección principal. Mostrar conteos solo después de comprobarlos en Atlas y llevar una captura fechada.
-- Autenticación administrativa: hashes de contraseña con bcrypt y token firmado; las mutaciones administrativas requieren autenticación.
+- Autenticación administrativa: hash bcrypt y token firmado en cookie `HttpOnly`; la aplicación, las lecturas privadas y las operaciones administrativas requieren sesión. El catálogo de libros es público y el navegador no guarda el token en `localStorage`.
+- Préstamos: el servidor verifica que el título exista en el catálogo, haya ejemplares disponibles y el número corresponda a un usuario aprobado. Las estadísticas de disponibilidad cuentan stock restante; las categorías se infieren del título y la duración mensual es programada, no real.
 - Consultas complejas documentadas: 30 en total, 10 de usuarios, 10 de préstamos y 10 de catálogo.
 - Las consultas son funciones GraphQL que ejecutan agregaciones en MongoDB; no presentar resultados concretos si no se han ejecutado y verificado.
 

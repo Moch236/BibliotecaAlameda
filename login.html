@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#883750">
+  <meta name="description" content="Acceso administrativo de Biblioteca Alameda.">
+  <title>Iniciar sesión | Biblioteca Alameda</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="login-page">
+  <main class="login-layout">
+    <section class="login-panel" aria-labelledby="loginTitle">
+      <a class="brand login-brand" href="/login" aria-label="Biblioteca Alameda">
+        <span class="brand-mark">BA</span>
+        <span class="brand-name"><strong>Biblioteca</strong><small>Alameda</small></span>
+      </a>
+      <p class="eyebrow">Acceso administrativo</p>
+      <h1 id="loginTitle">Bienvenido de nuevo</h1>
+      <p class="muted">Inicia sesión para administrar el catálogo, los usuarios y los préstamos.</p>
+      <form id="loginForm" class="login-form">
+        <label>Usuario
+          <input name="username" autocomplete="username" required autofocus>
+        </label>
+        <label>Contraseña
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <p id="loginError" class="login-error" role="alert" hidden></p>
+        <button class="primary" type="submit">Iniciar sesión</button>
+      </form>
+      <p class="login-footnote">Biblioteca Alameda · Gestión bibliotecaria</p>
+    </section>
+    <aside class="login-aside" aria-hidden="true">
+      <span class="login-ornament">BA</span>
+      <p>Un espacio para<br>el conocimiento.</p>
+      <span class="login-aside-caption">Biblioteca Alameda</span>
+    </aside>
+  </main>
+  <script src="/login.js"></script>
+</body>
+</html>

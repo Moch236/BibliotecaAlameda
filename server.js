@@ -1,12 +1,15 @@
 const crypto = require("node:crypto");
+const path = require("node:path");
+const { Readable } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
 require("dotenv").config();
 
 const express = require("express");
-const session = require("express-session");
 const bcrypt = require("bcryptjs");
+const multer = require("multer");
 const { ApolloServer } = require("@apollo/server");
 const { expressMiddleware } = require("@as-integrations/express5");
-const { MongoClient } = require("mongodb");
+const { GridFSBucket, MongoClient, ObjectId } = require("mongodb");
 
 const ROOT = __dirname;
 const catalog = [
@@ -19,6 +22,24 @@ const loans = [];
 let mongoClient = null;
 let mongoDb = null;
 let mongoConnected = false;
+
+class RequestValidationError extends Error {}
+
+const userDocumentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, fieldSize: 4 * 1024, files: 2, fields: 20, parts: 22 },
+  fileFilter: (_req, file, callback) => {
+    const allowedTypes = file.fieldname === "addressProof"
+      ? ["application/pdf", "image/jpeg", "image/png"]
+      : file.fieldname === "photo"
+        ? ["image/jpeg", "image/png"]
+        : [];
+    if (!allowedTypes.includes(file.mimetype)) {
+      return callback(new RequestValidationError("Formato de archivo no permitido"));
+    }
+    return callback(null, true);
+  }
+});
 
 function createAuthToken(account) {
   const secret = process.env.SESSION_SECRET;
@@ -59,12 +80,138 @@ function getRequestAuth(req) {
 
   const cookie = req.headers?.cookie || "";
   const match = cookie.match(/(?:^|;\s*)biblioteca_token=([^;]+)/);
-  return verifyAuthToken(match ? decodeURIComponent(match[1]) : null);
+  try {
+    return verifyAuthToken(match ? decodeURIComponent(match[1]) : null);
+  } catch {
+    return null;
+  }
 }
 
 function setAuthCookie(res, token) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.setHeader("Set-Cookie", `biblioteca_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800${secure}`);
+}
+
+function clearAuthCookie(res) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.setHeader("Set-Cookie", `biblioteca_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
+}
+
+function getUserDocumentsBucket() {
+  if (!mongoDb) throw new Error("MongoDB no está disponible");
+  return new GridFSBucket(mongoDb, { bucketName: "userDocuments" });
+}
+
+function detectDocumentMime(buffer) {
+  if (buffer.subarray(0, 5).toString("ascii") === "%PDF-") return "application/pdf";
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
+  if (buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "image/png";
+  return null;
+}
+
+function validateUserRegistration(body, files) {
+  const fieldLimits = {
+    fullName: 160,
+    idDocument: 100,
+    address: 240,
+    postalCode: 12,
+    phone: 30,
+    email: 160,
+    occupation: 100,
+    workplace: 140,
+    addressProofType: 20,
+    emergencyContact: 160
+  };
+  const requiredFields = ["fullName", "idDocument", "address"];
+  const input = {};
+
+  for (const [field, maxLength] of Object.entries(fieldLimits)) {
+    const value = body[field] ?? "";
+    if (typeof value !== "string") {
+      throw new RequestValidationError(`El campo ${field} no es válido`);
+    }
+    const normalized = value.trim();
+    if (normalized.length > maxLength || /[\u0000-\u001f]/.test(normalized)) {
+      throw new RequestValidationError(`El campo ${field} excede el formato permitido`);
+    }
+    if (requiredFields.includes(field) && !normalized) {
+      throw new RequestValidationError("Completa nombre, documento de identificación y domicilio");
+    }
+    input[field] = normalized;
+  }
+
+  if (input.addressProofType !== "INE") {
+    throw new RequestValidationError("El comprobante requerido debe ser una INE");
+  }
+  if (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) {
+    throw new RequestValidationError("El correo electrónico no tiene un formato válido");
+  }
+
+  const addressProof = files.addressProof?.[0];
+  const photo = files.photo?.[0] || null;
+  if (!addressProof) {
+    throw new RequestValidationError("Adjunta el archivo del comprobante de identificación");
+  }
+  const validateFile = (file, kind) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    const expectedMime = {
+      ".pdf": "application/pdf",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".png": "image/png"
+    }[extension];
+    const actualMime = detectDocumentMime(file.buffer);
+    if (!expectedMime || expectedMime !== actualMime || actualMime !== file.mimetype
+      || (kind === "photo" && actualMime === "application/pdf")) {
+      throw new RequestValidationError(`El archivo de ${kind === "photo" ? "fotografía" : "comprobante"} no coincide con un formato permitido`);
+    }
+    return { extension, contentType: actualMime };
+  };
+
+  return {
+    input,
+    addressProof: { file: addressProof, ...validateFile(addressProof, "addressProof") },
+    photo: photo ? { file: photo, ...validateFile(photo, "photo") } : null
+  };
+}
+
+async function storeUserDocument(bucket, userId, kind, document) {
+  const filename = `${kind === "addressProof" ? "comprobante" : "fotografia"}${document.extension}`;
+  const stream = bucket.openUploadStream(filename, {
+    metadata: { userId, kind, contentType: document.contentType }
+  });
+  try {
+    await pipeline(Readable.from([document.file.buffer]), stream);
+    return stream.id.toString();
+  } catch (error) {
+    try {
+      await stream.abort();
+    } catch (abortError) {
+      console.error(`No se pudo limpiar una carga incompleta de GridFS: ${abortError.message}`);
+    }
+    throw error;
+  }
+}
+
+async function deleteUserDocuments(user) {
+  const fileIds = [user.addressProofFileId, user.photoFileId].filter(Boolean);
+  if (!fileIds.length) return;
+  const bucket = getUserDocumentsBucket();
+  for (const fileId of fileIds) {
+    if (!ObjectId.isValid(fileId)) {
+      throw new Error("Un documento del usuario tiene una referencia de archivo inválida");
+    }
+    const file = await bucket.find({
+      _id: new ObjectId(fileId),
+      "metadata.userId": user.id
+    }).next();
+    if (file) await bucket.delete(file._id);
+  }
+}
+
+function withoutPrivateDocumentRefs(user) {
+  const { addressProofFileId, photoFileId, _id, ...safeUser } = user;
+  return safeUser;
 }
 
 const typeDefs = `#graphql
@@ -92,6 +239,8 @@ const typeDefs = `#graphql
     addressProofType: String!
     addressProof: String!
     photo: String
+    hasAddressProof: Boolean!
+    hasPhoto: Boolean!
     emergencyContact: String
     status: String!
     credentialNumber: String
@@ -100,6 +249,8 @@ const typeDefs = `#graphql
   type Loan {
     id: ID!
     title: String!
+    bookId: String
+    borrowerName: String
     loanDate: String!
     returnDate: String!
     libraryNumber: String!
@@ -128,21 +279,6 @@ const typeDefs = `#graphql
     value: Float!
     count: Int!
     details: String
-  }
-
-  input UserInput {
-    fullName: String!
-    idDocument: String!
-    address: String!
-    postalCode: String
-    phone: String
-    email: String
-    occupation: String
-    workplace: String
-    addressProofType: String!
-    addressProof: String!
-    photo: String
-    emergencyContact: String
   }
 
   input LoanInput {
@@ -180,9 +316,6 @@ const typeDefs = `#graphql
     email: String
     occupation: String
     workplace: String
-    addressProofType: String
-    addressProof: String
-    photo: String
     emergencyContact: String
   }
 
@@ -242,7 +375,6 @@ const typeDefs = `#graphql
   type Mutation {
     login(username: String!, password: String!): AuthResult!
     logout: AuthResult!
-    createUser(input: UserInput!): User!
     approveUser(id: ID!): User!
     updateUser(id: ID!, input: UpdateUserInput!): User!
     deleteUser(id: ID!): MutationResult!
@@ -272,6 +404,11 @@ function pageValues(limit, offset, defaultLimit = 100) {
 function catalogFilter(field, query) {
   const fields = ["title", "author", "classifier"].includes(field) ? [field] : ["title", "author", "classifier"];
   return searchFilter(fields, query);
+}
+
+function exactTitleFilter(title) {
+  const escaped = String(title).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escaped}$`, "i");
 }
 
 async function filterCatalog(field, query, limit, offset) {
@@ -334,7 +471,34 @@ function validateLoan(input) {
   }
 }
 
+async function findBookByTitle(title) {
+  return mongoDb.collection("books").findOne({ title: exactTitleFilter(title) });
+}
+
+async function countActiveLoansForBook(book, excludedLoanId) {
+  return mongoDb.collection("loans").countDocuments({
+    status: "active",
+    $or: [
+      { bookId: book.id },
+      { bookId: { $exists: false }, title: exactTitleFilter(book.title) },
+      { bookId: null, title: exactTitleFilter(book.title) }
+    ],
+    ...(excludedLoanId ? { _id: { $ne: excludedLoanId } } : {})
+  });
+}
+
+async function ensureBookAvailable(book, excludedLoanId) {
+  const activeLoans = await countActiveLoansForBook(book, excludedLoanId);
+  if (!Number.isInteger(book.total) || book.total <= activeLoans) {
+    throw new Error("No hay ejemplares disponibles para este libro");
+  }
+}
+
 const resolvers = {
+  User: {
+    hasAddressProof: user => Boolean(user.addressProofFileId),
+    hasPhoto: user => Boolean(user.photoFileId)
+  },
   Query: {
     books: (_parent, args) => filterCatalog(args.field, args.query, args.limit, args.offset),
     bookCount: (_parent, args) => mongoDb
@@ -397,12 +561,16 @@ const resolvers = {
       connected: mongoConnected,
       database: mongoConnected ? mongoDb?.databaseName || null : null
     }),
-    authStatus: (_parent, _args, context) => ({
-      ok: Boolean(context.req?.session?.role),
-      username: context.req?.session?.username || null,
-      role: context.req?.session?.role || null,
-      message: context.req?.session?.role ? "Sesión activa" : "Sin sesión"
-    }),
+    authStatus: (_parent, _args, context) => {
+      const auth = getRequestAuth(context.req);
+      const isAdmin = auth?.role === "admin";
+      return {
+        ok: isAdmin,
+        username: auth?.username || null,
+        role: auth?.role || null,
+        message: isAdmin ? "Sesión activa" : "Sin sesión"
+      };
+    },
 
     karlaUsersByStatus: () => runComplexAggregation("users", [
       { $group: { _id: "$status", count: { $sum: 1 } } },
@@ -554,8 +722,48 @@ const resolvers = {
       { $sort: { value: -1 } }
     ]),
     saulBooksByAvailability: () => runComplexAggregation("books", [
-      { $bucket: { groupBy: "$total", boundaries: [1, 3, 5, 7, 9], default: "9+", output: { count: { $sum: 1 }, stock: { $sum: "$total" } } } },
-      { $project: { _id: 0, label: { $toString: "$_id" }, value: "$stock", count: "$count" } }
+      { $lookup: {
+        from: "loans",
+        let: { bookId: "$id", title: "$title" },
+        pipeline: [
+          { $match: { $expr: { $and: [
+            { $eq: ["$status", "active"] },
+            { $or: [
+              { $eq: ["$bookId", "$$bookId"] },
+              { $and: [
+                { $eq: [{ $ifNull: ["$bookId", null] }, null] },
+                { $eq: ["$title", "$$title"] }
+              ] }
+            ] }
+          ] } } },
+          { $count: "count" }
+        ],
+        as: "activeLoans"
+      } },
+      { $project: {
+        available: { $max: [0, { $subtract: ["$total", { $ifNull: [{ $arrayElemAt: ["$activeLoans.count", 0] }, 0] }] }] }
+      } },
+      { $bucket: {
+        groupBy: "$available",
+        boundaries: [0, 1, 3, 5, 7, 9],
+        default: "9+",
+        output: { count: { $sum: 1 }, available: { $sum: "$available" } }
+      } },
+      { $project: {
+        _id: 0,
+        label: { $switch: {
+          branches: [
+            { case: { $eq: ["$_id", 0] }, then: "0 disponibles" },
+            { case: { $eq: ["$_id", 1] }, then: "1-2 disponibles" },
+            { case: { $eq: ["$_id", 3] }, then: "3-4 disponibles" },
+            { case: { $eq: ["$_id", 5] }, then: "5-6 disponibles" },
+            { case: { $eq: ["$_id", 7] }, then: "7-8 disponibles" }
+          ],
+          default: "9+ disponibles"
+        } },
+        value: "$available",
+        count: 1
+      } }
     ]),
     saulBooksByClassifierRange: () => runComplexAggregation("books", [
       { $project: { range: { $substr: ["$classifier", 0, 1] } } },
@@ -589,17 +797,50 @@ const resolvers = {
       { $sort: { count: -1 } }
     ]),
     saulAuthorsWithLowAvailability: () => runComplexAggregation("books", [
-      { $group: { _id: "$author", averageStock: { $avg: "$total" }, stock: { $sum: "$total" }, count: { $sum: 1 } } },
-      { $match: { averageStock: { $lt: 5 } } },
-      { $project: { _id: 0, label: "$_id", value: { $round: ["$averageStock", 2] }, count: "$count", details: { $concat: ["Stock total: ", { $toString: "$stock" }] } } },
+      { $lookup: {
+        from: "loans",
+        let: { bookId: "$id", title: "$title" },
+        pipeline: [
+          { $match: { $expr: { $and: [
+            { $eq: ["$status", "active"] },
+            { $or: [
+              { $eq: ["$bookId", "$$bookId"] },
+              { $and: [
+                { $eq: [{ $ifNull: ["$bookId", null] }, null] },
+                { $eq: ["$title", "$$title"] }
+              ] }
+            ] }
+          ] } } },
+          { $count: "count" }
+        ],
+        as: "activeLoans"
+      } },
+      { $project: {
+        author: 1,
+        available: { $max: [0, { $subtract: ["$total", { $ifNull: [{ $arrayElemAt: ["$activeLoans.count", 0] }, 0] }] }] }
+      } },
+      { $group: {
+        _id: "$author",
+        averageAvailable: { $avg: "$available" },
+        available: { $sum: "$available" },
+        count: { $sum: 1 }
+      } },
+      { $match: { averageAvailable: { $lt: 5 } } },
+      { $project: {
+        _id: 0,
+        label: "$_id",
+        value: { $round: ["$averageAvailable", 2] },
+        count: 1,
+        details: { $concat: ["Disponibles: ", { $toString: "$available" }] }
+      } },
       { $sort: { value: 1 } }
     ])
   },
   Mutation: {
     login: async (_parent, { username, password }, context) => {
       if (!mongoDb) throw new Error("MongoDB no está disponible");
-      const account = await mongoDb.collection("accounts").findOne({ username });
-      if (!account || !await bcrypt.compare(password, account.passwordHash)) {
+      const account = await mongoDb.collection("accounts").findOne({ username: username.trim() });
+      if (!account || account.role !== "admin" || !await bcrypt.compare(password, account.passwordHash)) {
         throw new Error("Usuario o contraseña incorrectos");
       }
       const token = createAuthToken(account);
@@ -607,24 +848,8 @@ const resolvers = {
       return { ok: true, username: account.username, role: account.role, message: "Sesión iniciada" };
     },
     logout: (_parent, _args, context) => {
-      context.res.setHeader("Set-Cookie", "biblioteca_token=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax");
+      clearAuthCookie(context.res);
       return { ok: true, username: null, role: null, message: "Sesión cerrada" };
-    },
-    createUser: async (_parent, { input }, context) => {
-      requireAdmin(context);
-      if (!mongoDb) throw new Error("MongoDB no está disponible");
-      if (!input.fullName || !input.idDocument || !input.address) {
-        throw new Error("El nombre completo, documento y domicilio son obligatorios");
-      }
-      if (input.addressProofType !== "INE" || !input.addressProof) {
-        throw new Error("El comprobante de domicilio debe ser una INE");
-      }
-      if (!/\.(pdf|jpg|jpeg|png)$/i.test(input.addressProof)) {
-        throw new Error("El comprobante debe ser PDF, JPG, JPEG o PNG");
-      }
-      const user = { id: crypto.randomUUID(), ...input, status: "pending", credentialNumber: null };
-      await mongoDb.collection("users").insertOne(user);
-      return user;
     },
     approveUser: async (_parent, { id }, context) => {
       requireAdmin(context);
@@ -650,7 +875,23 @@ const resolvers = {
       requireAdmin(context);
       if (!mongoDb) throw new Error("MongoDB no está disponible");
       validateLoan(input);
-      const loan = { id: crypto.randomUUID(), ...input, status: input.status || "active" };
+      const book = await findBookByTitle(input.title.trim());
+      if (!book) throw new Error("No se encontró el libro seleccionado en el catálogo");
+      if ((input.status || "active") === "active") await ensureBookAvailable(book);
+      const borrower = await mongoDb.collection("users").findOne({
+        libraryNumber: input.libraryNumber.trim(),
+        status: "approved"
+      });
+      if (!borrower) throw new Error("El número de biblioteca no corresponde a un usuario aprobado");
+      const loan = {
+        id: crypto.randomUUID(),
+        ...input,
+        title: book.title,
+        bookId: book.id,
+        borrowerName: borrower.fullName,
+        libraryNumber: borrower.libraryNumber,
+        status: input.status || "active"
+      };
       await mongoDb.collection("loans").insertOne(loan);
       return loan;
     },
@@ -666,6 +907,9 @@ const resolvers = {
     deleteUser: async (_parent, { id }, context) => {
       requireAdmin(context);
       if (!mongoDb) throw new Error("MongoDB no está disponible");
+      const user = await mongoDb.collection("users").findOne({ id });
+      if (!user) return { ok: false, message: "Usuario no encontrado" };
+      await deleteUserDocuments(user);
       const result = await mongoDb.collection("users").deleteOne({ id });
       const deleted = result.deletedCount > 0;
       return { ok: deleted, message: deleted ? "Usuario eliminado" : "Usuario no encontrado" };
@@ -676,8 +920,34 @@ const resolvers = {
       const loan = await mongoDb.collection("loans").findOne({ id });
       if (!loan) throw new Error("Préstamo no encontrado");
       validateLoan({ ...loan, ...input });
-      Object.assign(loan, input);
-      await mongoDb.collection("loans").updateOne({ id }, { $set: input });
+      const changes = { ...input };
+      let book = null;
+      if (input.title !== undefined) {
+        book = await findBookByTitle(input.title.trim());
+        if (!book) throw new Error("No se encontró el libro seleccionado en el catálogo");
+        changes.title = book.title;
+        changes.bookId = book.id;
+      }
+      if (input.libraryNumber !== undefined) {
+        const borrower = await mongoDb.collection("users").findOne({
+          libraryNumber: input.libraryNumber.trim(),
+          status: "approved"
+        });
+        if (!borrower) throw new Error("El número de biblioteca no corresponde a un usuario aprobado");
+        changes.libraryNumber = borrower.libraryNumber;
+        changes.borrowerName = borrower.fullName;
+      }
+      if ((input.status ?? loan.status) === "active"
+        && (input.status !== undefined || input.title !== undefined)) {
+        book ||= loan.bookId
+          ? await mongoDb.collection("books").findOne({ id: loan.bookId })
+          : await findBookByTitle(loan.title);
+        if (!book) throw new Error("No se encontró el libro asociado al préstamo");
+        await ensureBookAvailable(book, loan._id);
+        changes.bookId = book.id;
+      }
+      Object.assign(loan, changes);
+      await mongoDb.collection("loans").updateOne({ id }, { $set: changes });
       return loan;
     },
     deleteLoan: async (_parent, { id }, context) => {
@@ -708,6 +978,12 @@ const resolvers = {
       if (input.total !== undefined && (!Number.isInteger(input.total) || input.total < 0)) {
         throw new Error("La cantidad de ejemplares debe ser un entero igual o mayor que cero");
       }
+      if (input.total !== undefined) {
+        const activeLoans = await countActiveLoansForBook(book);
+        if (input.total < activeLoans) {
+          throw new Error("No puedes reducir el inventario por debajo de los préstamos activos");
+        }
+      }
       Object.assign(book, input);
       await mongoDb.collection("books").updateOne({ id }, { $set: input });
       return book;
@@ -715,12 +991,26 @@ const resolvers = {
     deleteBook: async (_parent, { id }, context) => {
       requireAdmin(context);
       if (!mongoDb) throw new Error("MongoDB no está disponible");
+      const book = await mongoDb.collection("books").findOne({ id });
+      if (!book) return { ok: false, message: "Libro no encontrado" };
+      if (await countActiveLoansForBook(book)) {
+        throw new Error("No puedes eliminar un libro con préstamos activos");
+      }
       const result = await mongoDb.collection("books").deleteOne({ id });
       const deleted = result.deletedCount > 0;
       return { ok: deleted, message: deleted ? "Libro eliminado" : "Libro no encontrado" };
     }
   }
 };
+
+const publicQueries = new Set(["authStatus", "bookCount", "books", "mongoStatus"]);
+for (const [field, resolver] of Object.entries(resolvers.Query)) {
+  if (publicQueries.has(field)) continue;
+  resolvers.Query[field] = (parent, args, context, info) => {
+    requireAdmin(context);
+    return resolver(parent, args, context, info);
+  };
+}
 
 function sendJson(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
@@ -741,56 +1031,181 @@ function readJson(req) {
   });
 }
 
+function requireAdminApi(req, res, next) {
+  if (getRequestAuth(req)?.role !== "admin") {
+    return sendJson(res, 401, { error: "Se requiere una sesión de administrador" });
+  }
+  return next();
+}
+
+function requireMongoApi(_req, res, next) {
+  if (!mongoDb) return sendJson(res, 503, { error: "MongoDB no está disponible" });
+  return next();
+}
+
+function parseUserRegistrationFiles(req, res, next) {
+  userDocumentUpload.fields([
+    { name: "addressProof", maxCount: 1 },
+    { name: "photo", maxCount: 1 }
+  ])(req, res, error => {
+    if (!error) return next();
+    if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+      return sendJson(res, 413, { error: "Cada archivo debe pesar 5 MB o menos" });
+    }
+    if (error instanceof multer.MulterError) {
+      return sendJson(res, 400, { error: "La solicitud contiene archivos o campos no permitidos" });
+    }
+    if (error instanceof RequestValidationError) {
+      return sendJson(res, 400, { error: error.message });
+    }
+    console.error(`No se pudo procesar la carga de archivos: ${error.message}`);
+    return sendJson(res, 400, { error: "No se pudo procesar la carga de archivos" });
+  });
+}
+
+function validateUserRegistrationInput(req, res, next) {
+  try {
+    req.registration = validateUserRegistration(req.body || {}, req.files || {});
+    return next();
+  } catch (error) {
+    if (error instanceof RequestValidationError) {
+      return sendJson(res, 400, { error: error.message });
+    }
+    console.error(`No se pudo validar la solicitud de usuario: ${error.message}`);
+    return sendJson(res, 500, { error: "No fue posible validar la solicitud" });
+  }
+}
+
+async function createUserFromRegistration(req, res) {
+  let uploadedFileIds = [];
+  let bucket;
+  try {
+    const registration = req.registration;
+    const id = crypto.randomUUID();
+    bucket = getUserDocumentsBucket();
+    const addressProofFileId = await storeUserDocument(bucket, id, "addressProof", registration.addressProof);
+    uploadedFileIds.push(addressProofFileId);
+    let photoFileId = null;
+    if (registration.photo) {
+      photoFileId = await storeUserDocument(bucket, id, "photo", registration.photo);
+      uploadedFileIds.push(photoFileId);
+    }
+
+    const user = {
+      id,
+      ...registration.input,
+      addressProof: `comprobante${registration.addressProof.extension}`,
+      photo: registration.photo ? `fotografia${registration.photo.extension}` : null,
+      addressProofFileId,
+      photoFileId,
+      status: "pending",
+      credentialNumber: null
+    };
+    await mongoDb.collection("users").insertOne(user);
+    return sendJson(res, 201, {
+      id: user.id,
+      fullName: user.fullName,
+      address: user.address,
+      postalCode: user.postalCode,
+      phone: user.phone,
+      email: user.email,
+      occupation: user.occupation,
+      workplace: user.workplace,
+      status: user.status,
+      credentialNumber: user.credentialNumber
+    });
+  } catch (error) {
+    for (const fileId of uploadedFileIds) {
+      try {
+        await bucket.delete(new ObjectId(fileId));
+      } catch (cleanupError) {
+        console.error(`No se pudo limpiar un archivo de registro fallido: ${cleanupError.message}`);
+      }
+    }
+    if (error instanceof RequestValidationError) {
+      return sendJson(res, 400, { error: error.message });
+    }
+    console.error(`No se pudo guardar la solicitud de usuario: ${error.message}`);
+    return sendJson(res, 500, { error: "No fue posible guardar la solicitud. Inténtalo más tarde." });
+  }
+}
+
+async function downloadUserDocument(req, res) {
+  const { id, documentType } = req.params;
+  if (!["addressProof", "photo"].includes(documentType)) {
+    return sendJson(res, 404, { error: "Documento no encontrado" });
+  }
+
+  try {
+    const user = await mongoDb.collection("users").findOne({ id });
+    if (!user) return sendJson(res, 404, { error: "Documento no encontrado" });
+    const fileId = documentType === "addressProof" ? user.addressProofFileId : user.photoFileId;
+    if (!fileId || !ObjectId.isValid(fileId)) {
+      return sendJson(res, 404, { error: "Documento no encontrado" });
+    }
+
+    const bucket = getUserDocumentsBucket();
+    const file = await bucket.find({
+      _id: new ObjectId(fileId),
+      "metadata.userId": user.id,
+      "metadata.kind": documentType
+    }).next();
+    if (!file) return sendJson(res, 404, { error: "Documento no encontrado" });
+
+    const extension = {
+      "application/pdf": ".pdf",
+      "image/jpeg": ".jpg",
+      "image/png": ".png"
+    }[file.metadata?.contentType];
+    if (!extension || (documentType === "photo" && file.metadata?.contentType === "application/pdf")) {
+      return sendJson(res, 404, { error: "Documento no encontrado" });
+    }
+
+    const filename = `${documentType === "addressProof" ? "comprobante" : "fotografia"}${extension}`;
+    res.setHeader("Content-Type", file.metadata.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    const downloadStream = bucket.openDownloadStream(file._id);
+    pipeline(downloadStream, res).catch(error => {
+      console.error(`No se pudo descargar un documento de usuario: ${error.message}`);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "No fue posible descargar el documento" });
+      } else {
+        res.destroy();
+      }
+    });
+  } catch (error) {
+    console.error(`No se pudo preparar la descarga de un documento de usuario: ${error.message}`);
+    return sendJson(res, 500, { error: "No fue posible descargar el documento" });
+  }
+}
+
 async function connectMongo(uri, databaseName) {
   if (!uri) throw new Error("Se requiere la cadena de conexión de MongoDB Atlas");
-  if (mongoClient) {
-    await mongoClient.close();
-    mongoConnected = false;
-  }
+  const previousClient = mongoClient;
+  mongoClient = null;
+  mongoDb = null;
+  mongoConnected = false;
+  if (previousClient) await previousClient.close();
 
-  const candidates = [uri];
-  let username = process.env.MONGODB_USERNAME;
-  let password = process.env.MONGODB_PASSWORD;
-
-  if (!username || !password) {
-    const match = uri.match(/^mongodb(?:\+srv)?:\/\/([^:@]+):([^@]+)@/);
-    if (match) {
-      username = decodeURIComponent(match[1]);
-      password = decodeURIComponent(match[2]);
-    }
-  }
-
-  if (username && password) {
-    username = encodeURIComponent(username);
-    password = encodeURIComponent(password);
-    const srvUri = `mongodb+srv://${username}:${password}@clusterlabo.voj4kvr.mongodb.net/biblioteca_alameda?retryWrites=true&w=majority`;
-    if (uri.startsWith("mongodb+srv://")) {
-      candidates.push(
-        `mongodb://${username}:${password}@ac-fr60g4z-shard-00-00.voj4kvr.mongodb.net:27017,ac-fr60g4z-shard-00-01.voj4kvr.mongodb.net:27017,ac-fr60g4z-shard-00-02.voj4kvr.mongodb.net:27017/biblioteca_alameda?ssl=true&authSource=admin&retryWrites=true&w=majority`
-      );
-    } else {
-      candidates.unshift(srvUri);
-    }
-  }
-
-  let lastError = null;
-  for (const candidate of candidates) {
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 15000 });
+  try {
+    await client.connect();
+    const database = client.db(databaseName || "biblioteca_alameda");
+    await database.admin().ping();
+    mongoClient = client;
+    mongoDb = database;
+    mongoConnected = true;
+    return database;
+  } catch (error) {
     try {
-      const client = new MongoClient(candidate, { serverSelectionTimeoutMS: 15000 });
-      await client.connect();
-      await client.db(databaseName || "biblioteca_alameda").admin().ping();
-      mongoClient = client;
-      break;
-    } catch (error) {
-      lastError = error;
-      if (mongoClient) await mongoClient.close();
+      await client.close();
+    } catch (closeError) {
+      console.error(`No se pudo cerrar el cliente MongoDB tras un fallo de conexión: ${closeError.message}`);
     }
+    throw error;
   }
-
-  if (!mongoClient) throw lastError || new Error("No fue posible conectar a MongoDB Atlas");
-  mongoDb = mongoClient.db(databaseName || "biblioteca_alameda");
-  mongoConnected = true;
-  return mongoDb;
 }
 
 async function handleApi(req, res, url) {
@@ -804,38 +1219,60 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
+    let body;
     try {
-      const body = await readJson(req);
-      if (!mongoDb) return sendJson(res, 503, { error: "MongoDB no está disponible" });
-      const account = await mongoDb.collection("accounts").findOne({ username: body.username });
-      if (!account || !await bcrypt.compare(body.password || "", account.passwordHash)) {
+      body = await readJson(req);
+    } catch (error) {
+      return sendJson(res, 400, { error: error.message });
+    }
+
+    if (!body || typeof body !== "object"
+      || typeof body.username !== "string" || typeof body.password !== "string"
+      || !body.username.trim() || !body.password) {
+      return sendJson(res, 400, { error: "Ingresa usuario y contraseña" });
+    }
+    if (!mongoDb) return sendJson(res, 503, { error: "MongoDB no está disponible" });
+
+    try {
+      const account = await mongoDb.collection("accounts").findOne({ username: body.username.trim() });
+      if (!account || account.role !== "admin"
+        || !await bcrypt.compare(body.password, account.passwordHash)) {
         return sendJson(res, 401, { error: "Usuario o contraseña incorrectos" });
       }
       const token = createAuthToken(account);
       setAuthCookie(res, token);
-      return sendJson(res, 200, { ok: true, username: account.username, role: account.role, token });
+      return sendJson(res, 200, { ok: true, username: account.username, role: account.role });
     } catch (error) {
-      return sendJson(res, 400, { error: error.message });
+      console.error(`No se pudo iniciar sesión: ${error.message}`);
+      return sendJson(res, 500, { error: "No fue posible iniciar sesión. Inténtalo más tarde." });
     }
   }
 
   if (req.method === "POST" && url.pathname === "/api/auth/logout") {
-    res.setHeader("Set-Cookie", "biblioteca_token=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax");
+    clearAuthCookie(res);
     return sendJson(res, 200, { ok: true });
   }
 
   if (req.method === "GET" && url.pathname === "/api/mongo/status") {
-    return sendJson(res, 200, {
+    return sendJson(res, mongoConnected ? 200 : 503, {
       connected: mongoConnected,
       database: mongoConnected ? mongoDb?.databaseName || null : null
     });
   }
 
   if (req.method === "GET" && url.pathname === "/api/users/pending") {
-    const pending = mongoDb
-      ? await mongoDb.collection("users").find({ status: "pending" }).toArray()
-      : users.filter(user => user.status === "pending");
-    return sendJson(res, 200, pending);
+    if (getRequestAuth(req)?.role !== "admin") {
+      return sendJson(res, 401, { error: "Se requiere una sesión de administrador" });
+    }
+    try {
+      const pending = mongoDb
+        ? await mongoDb.collection("users").find({ status: "pending" }).toArray()
+        : users.filter(user => user.status === "pending");
+      return sendJson(res, 200, pending.map(withoutPrivateDocumentRefs));
+    } catch (error) {
+      console.error(`No se pudieron consultar solicitudes pendientes: ${error.message}`);
+      return sendJson(res, 500, { error: "No fue posible cargar las solicitudes pendientes" });
+    }
   }
 
   return sendJson(res, 404, { error: "Ruta no encontrada" });
@@ -843,20 +1280,6 @@ async function handleApi(req, res, url) {
 
 async function createServer() {
   const app = express();
-  app.set("trust proxy", 1);
-
-  app.use(session({
-    name: "biblioteca.sid",
-    secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex"),
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 8 * 60 * 60 * 1000
-    }
-  }));
 
   app.get("/health", (_req, res) => {
     sendJson(res, 200, {
@@ -866,6 +1289,9 @@ async function createServer() {
     });
   });
 
+  app.post("/api/users", requireAdminApi, parseUserRegistrationFiles, validateUserRegistrationInput, requireMongoApi, createUserFromRegistration);
+  app.get("/api/users/:id/documents/:documentType", requireAdminApi, requireMongoApi, downloadUserDocument);
+
   app.use("/api", (req, res) => {
     const url = new URL(req.originalUrl, "http://localhost");
     return handleApi(req, res, url);
@@ -873,11 +1299,23 @@ async function createServer() {
 
   const apollo = new ApolloServer({ typeDefs, resolvers });
   await apollo.start();
+  app.locals.apolloServer = apollo;
   app.use("/graphql", express.json({ limit: "1mb" }), expressMiddleware(apollo, {
     context: async ({ req, res }) => ({ req, res })
   }));
 
-  app.use(express.static(ROOT));
+  app.get(["/login", "/login.html"], (_req, res) => {
+    res.sendFile(path.join(ROOT, "login.html"));
+  });
+  app.get(["/", "/index.html"], (req, res) => {
+    if (getRequestAuth(req)?.role !== "admin") {
+      return res.redirect(302, "/login");
+    }
+    return res.sendFile(path.join(ROOT, "index.html"));
+  });
+  app.get("/styles.css", (_req, res) => res.sendFile(path.join(ROOT, "styles.css")));
+  app.get("/app.js", (_req, res) => res.sendFile(path.join(ROOT, "app.js")));
+  app.get("/login.js", (_req, res) => res.sendFile(path.join(ROOT, "login.js")));
   return app;
 }
 

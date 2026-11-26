@@ -65,6 +65,7 @@ MongoDB Atlas
   +-- biblioteca_alameda.users
   +-- biblioteca_alameda.loans
   +-- biblioteca_alameda.accounts
+  +-- biblioteca_alameda.userDocuments.files / userDocuments.chunks (GridFS)
 ```
 
 Componentes principales:
@@ -108,6 +109,9 @@ Campos principales:
 - `workplace`
 - `addressProofType`
 - `addressProof`
+- `photo`
+- `addressProofFileId` (referencia privada a GridFS)
+- `photoFileId` (referencia privada a GridFS, opcional)
 - `status`
 - `credentialNumber`
 - `seed`
@@ -136,6 +140,10 @@ Campos principales:
 - `updatedAt`
 
 La contraseña administrativa no se almacena en texto plano. Se usa bcrypt para guardar únicamente el hash.
+
+### Archivos de usuario en GridFS
+
+Las solicitudes nuevas cargan el contenido del comprobante y, opcionalmente, una fotografía. El servidor acepta comprobantes PDF/JPG/PNG y fotografías JPG/PNG, con un máximo de 5 MB por archivo. Valida extensión, MIME y firma inicial, y almacena los documentos en el bucket `userDocuments`; las referencias se guardan en el usuario y no se exponen en la API GraphQL. Los endpoints de carga y descarga requieren una sesión administrativa. Al eliminar al usuario, también se eliminan sus documentos GridFS. Los registros creados antes de esta función pueden conservar solo nombres de archivo y no contienen un documento recuperable.
 
 ## 5. Datos masivos
 
@@ -188,9 +196,12 @@ Abrir:
 http://localhost:3000
 ```
 
+La raíz redirige a `/login` si no existe una sesión administrativa válida. La sesión se conserva en una cookie `HttpOnly`, no en `localStorage`. La consulta GraphQL del catálogo de libros puede hacerse sin iniciar sesión; la interfaz administrativa, usuarios, préstamos, estadísticas y operaciones administrativas requieren autenticación.
+
 Endpoints principales:
 
-- Aplicación: `http://localhost:3000`
+- Inicio de sesión: `http://localhost:3000/login`
+- Aplicación administrativa: `http://localhost:3000` (requiere sesión)
 - GraphQL: `http://localhost:3000/graphql`
 - Estado MongoDB: `http://localhost:3000/api/mongo/status`
 - Salud: `http://localhost:3000/health`
@@ -207,9 +218,9 @@ npm test
 Las pruebas verifican:
 
 - Catálogo por GraphQL.
-- Protección de operaciones administrativas.
+- Redirección al login y protección de lecturas privadas y operaciones administrativas.
+- Acceso autenticado con cookie y cierre de sesión.
 - Rechazo de rutas REST obsoletas.
-- Rechazo de operaciones CRUD sin sesión.
 - Exposición exacta de 30 consultas complejas.
 
 ## 8. Autenticación
@@ -228,6 +239,8 @@ ADMIN_PASSWORD="<contraseña temporal>"
 ```
 
 Para producción, cambie la contraseña temporal después de la primera sesión. La contraseña no se guarda en texto plano.
+
+La aplicación tiene una pantalla de login independiente en `/login`. El backend verifica la contraseña con bcrypt y entrega una cookie firmada, `HttpOnly`, `SameSite=Lax` y `Secure` en producción. Las rutas administrativas y lecturas privadas de GraphQL requieren esa sesión; el catálogo de libros permanece público. El cierre de sesión elimina la cookie y vuelve al login.
 
 ## 9. GraphQL
 

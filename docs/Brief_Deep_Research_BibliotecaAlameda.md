@@ -47,11 +47,12 @@ La solución permite:
 
 - Buscar libros por título, autor o clasificador.
 - Crear, editar y eliminar registros del catálogo.
-- Registrar usuarios con datos de solicitud y comprobante; revisar solicitudes pendientes y aprobar usuarios desde el flujo administrativo.
+- Registrar usuarios con datos de solicitud y cargar un comprobante de identificación; revisar solicitudes pendientes y aprobar usuarios desde el flujo administrativo.
+- Cargar comprobantes PDF/JPG/PNG y fotografías JPG/PNG (máximo 5 MB por archivo) en GridFS privado de MongoDB Atlas; solo el administrador autenticado puede descargarlos y se eliminan al borrar el perfil.
 - Mostrar información de credencial digital.
-- Registrar, consultar, actualizar y eliminar préstamos.
+- Registrar, consultar, actualizar y eliminar préstamos; el backend valida el libro del catálogo, el stock disponible y que el usuario tenga una credencial aprobada.
 - Consultar estadísticas agregadas para apoyar tareas administrativas.
-- Proteger las mutaciones administrativas mediante autenticación.
+- Proteger el acceso administrativo, las lecturas privadas y las mutaciones mediante autenticación.
 
 La entrevista y la visita son evidencia del contexto real. Completar la descripción de las necesidades con las observaciones que efectivamente expresó la Biblioteca:
 
@@ -132,7 +133,7 @@ Campos principales documentados: `id`, `title`, `author`, `classifier`, `total`,
 
 ### Colección `users`
 
-Campos principales documentados: `id`, `libraryNumber`, `fullName`, `idDocument`, `address`, `postalCode`, `phone`, `email`, `occupation`, `workplace`, `addressProofType`, `addressProof`, `status`, `credentialNumber` y `seed`. La interfaz también contempla fotografía y contacto de emergencia.
+Campos principales documentados: `id`, `libraryNumber`, `fullName`, `idDocument`, `address`, `postalCode`, `phone`, `email`, `occupation`, `workplace`, `addressProofType`, `addressProof`, `photo`, `status`, `credentialNumber` y `seed`. Las referencias internas `addressProofFileId` y `photoFileId` conectan los documentos actuales con GridFS; no deben tratarse como enlaces públicos. Los registros antiguos pueden conservar solo nombres de archivos sin contenido almacenado.
 
 Trata los datos personales como información sensible. Para el DOCX utiliza diagramas o documentos ficticios, no datos identificables.
 
@@ -146,6 +147,8 @@ Guarda cuentas administrativas, rol, fecha de actualización y hash bcrypt de co
 
 Explica qué campos son principales, cómo se relacionan los préstamos con libros y usuarios y cuáles son las limitaciones del modelo actual. No presentes los campos como un esquema relacional rígido.
 
+Al describir las estadísticas, aclara que la consulta de disponibilidad calcula ejemplares restantes restando préstamos activos; el promedio por mes es duración programada, no duración real observada, y la distribución de categorías se infiere del título, no de un campo formal de materia.
+
 ## 7. Backend, GraphQL y funcionalidades
 
 El esquema GraphQL incluye consultas para libros, usuarios, solicitudes pendientes, préstamos, estados de MongoDB y autenticación. Incluye mutaciones de login/logout y operaciones para crear, aprobar, actualizar y eliminar usuarios; crear, actualizar y eliminar préstamos; y crear, actualizar y eliminar libros.
@@ -154,7 +157,7 @@ La interfaz presenta las secciones:
 
 - **Catálogo:** buscar por título, autor o clasificador y administrar libros.
 - **Usuarios:** registrar solicitudes, revisar pendientes, aprobar, administrar registros y consultar credencial.
-- **Préstamos:** registrar y administrar solicitudes y estados de préstamo.
+- **Préstamos:** registrar y administrar operaciones relacionadas con libros y usuarios; validar disponibilidad y aprobación del usuario en el backend.
 - **Consultas complejas:** acceder a las estadísticas asignadas a cada integrante.
 
 ## 8. Consultas complejas del proyecto
@@ -207,11 +210,11 @@ La presencia de una consulta en el esquema no demuestra que se haya ejecutado co
 ### Seguridad conocida
 
 - Contraseñas administrativas guardadas como hash bcrypt.
-- Mutaciones administrativas protegidas por autenticación.
-- Tokens firmados con HMAC y expiración configurada por la aplicación; cookies marcadas `HttpOnly`, `SameSite=Lax` y, en producción, `Secure`.
+- Lecturas privadas y mutaciones administrativas protegidas por autenticación; catálogo de libros público.
+- Tokens firmados con HMAC y expiración configurada por la aplicación; cookie marcada `HttpOnly`, `SameSite=Lax` y, en producción, `Secure`. El navegador no guarda el token en `localStorage`.
 - Variables privadas configuradas fuera del código, mediante entorno.
 
-Menciona las medidas de forma proporcional. No describas el sistema como certificado o completamente seguro. Indica como límite que el frontend conserva el token para las solicitudes GraphQL y que cualquier evaluación de seguridad más amplia requiere pruebas específicas.
+Menciona las medidas de forma proporcional: autenticación administrativa para carga/descarga, almacenamiento privado con GridFS, límites y comprobación básica de tipo de archivo y eliminación de documentos al borrar un perfil. No describas el sistema como certificado o completamente seguro; la validación de firma inicial no es un análisis antimalware. Aclara que los registros antiguos pueden contener solo nombres de archivos y que se requieren pruebas adicionales antes de afirmar una seguridad más amplia.
 
 ### Ejecución y pruebas
 
@@ -220,7 +223,7 @@ Menciona las medidas de forma proporcional. No describas el sistema como certifi
 - Pruebas automatizadas: `npm test`
 - Carga de datos de prueba: `npm run seed:mongo` (esta operación sustituye el contenido de colecciones principales; advertir que no se debe ejecutar contra datos reales o producción).
 
-El proyecto reportó pruebas automatizadas para catálogo, autenticación/protección de operaciones y disponibilidad de las 30 consultas en el esquema. Antes de declarar el estado final, ejecutar nuevamente `npm test` y reportar la salida real. Aclarar que la prueba de presencia en el esquema no reemplaza ejecutar individualmente las 30 consultas.
+El proyecto incluye pruebas automatizadas para catálogo, protección de lecturas privadas, redirección al login, sesión mediante cookie, cierre de sesión y disponibilidad de las 30 consultas en el esquema. Ejecutar nuevamente `npm test` y reportar la salida real. Aclarar que la prueba de presencia en el esquema no reemplaza ejecutar individualmente las 30 consultas.
 
 ### Limitaciones / trabajo futuro
 

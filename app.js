@@ -50,9 +50,6 @@ const editFields = {
     { name: "email", label: "Correo electrónico", type: "email", maxLength: 160, wide: true },
     { name: "occupation", label: "Ocupación", maxLength: 100 },
     { name: "workplace", label: "Escuela o trabajo", maxLength: 140 },
-    { name: "addressProofType", label: "Tipo de comprobante", type: "select", options: ["INE"], required: true },
-    { name: "addressProof", label: "Nombre del archivo de comprobante", maxLength: 240, wide: true },
-    { name: "photo", label: "Nombre del archivo de fotografía", maxLength: 240, wide: true },
     { name: "emergencyContact", label: "Contacto de emergencia", maxLength: 160, wide: true }
   ],
   loans: [
@@ -111,7 +108,7 @@ const complexQueries = {
     ["Lectores más activos", "franciscoMostActiveBorrowers"],
     ["Préstamos activos vencidos", "franciscoOverdueActiveLoans"],
     ["Préstamos por mes de retorno", "franciscoLoansByReturnMonth"],
-    ["Duración promedio mensual", "franciscoAverageDurationByMonth"],
+    ["Duración programada promedio por mes", "franciscoAverageDurationByMonth"],
     ["Estado por lector", "franciscoLoanStatusByBorrower"],
     ["Tasa mensual de devolución", "franciscoReturnedRateByMonth"],
     ["Tarjetas con más préstamos", "franciscoTopLibraryNumbers"]
@@ -125,7 +122,7 @@ const complexQueries = {
     ["Ubicaciones con mayor stock", "saulLocationsWithHighestStock"],
     ["Matriz autor-ubicación", "saulAuthorLocationMatrix"],
     ["Clasificadores principales", "saulTopClassifiers"],
-    ["Distribución por materia", "saulSubjectDistribution"],
+    ["Categorías inferidas del título", "saulSubjectDistribution"],
     ["Autores con baja disponibilidad", "saulAuthorsWithLowAvailability"]
   ]
 };
@@ -213,15 +210,25 @@ function renderUser(user) {
       <div class="data-row-main">
         <strong>${escapeHtml(user.fullName)}</strong>
         <small>${escapeHtml(user.email || "Sin correo")} · ${escapeHtml(user.libraryNumber || "Sin número de biblioteca")}</small>
+        <small>Comprobante: ${user.hasAddressProof ? "disponible" : "no cargado"} · Fotografía: ${user.hasPhoto ? "disponible" : "no cargada"}</small>
       </div>
       <div class="data-row-content">
         ${renderStatus(user.status)}
         <div class="row-actions">
+          ${renderDocumentDownload(user, "addressProof", "Comprobante")}
+          ${renderDocumentDownload(user, "photo", "Fotografía")}
           <button class="secondary" type="button" data-action="edit" data-kind="users" data-id="${escapeHtml(user.id)}">Editar</button>
           <button class="danger" type="button" data-action="delete" data-kind="users" data-id="${escapeHtml(user.id)}">Eliminar</button>
         </div>
       </div>
     </article>`;
+}
+
+function renderDocumentDownload(user, documentType, label) {
+  const available = documentType === "addressProof" ? user.hasAddressProof : user.hasPhoto;
+  if (!available) return "";
+  const userId = encodeURIComponent(user.id);
+  return `<a class="secondary document-link" href="/api/users/${userId}/documents/${documentType}">Descargar ${label}</a>`;
 }
 
 function renderLoan(loan) {
@@ -242,15 +249,16 @@ function renderLoan(loan) {
 }
 
 async function graphqlRequest(query, variables = {}) {
-  const token = localStorage.getItem("biblioteca_token");
-  const response = await fetch("/graphql", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    },
-    body: JSON.stringify({ query, variables })
-  });
+  let response;
+  try {
+    response = await fetch("/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, variables })
+    });
+  } catch {
+    throw new Error("No se pudo conectar con el servidor. Verifica tu conexión e inténtalo de nuevo.");
+  }
   let payload;
   try {
     payload = await response.json();
@@ -334,16 +342,18 @@ async function loadPendingUsers() {
   try {
     const data = await graphqlRequest(`
       query PendingUsers {
-        pendingUsers { id fullName addressProofType addressProof }
+        pendingUsers { id fullName addressProofType hasAddressProof hasPhoto }
       }`);
     const users = data.pendingUsers;
     container.innerHTML = users.length ? users.map(user => `
       <article class="pending-user">
         <div class="pending-user-main">
           <strong>${escapeHtml(user.fullName)}</strong>
-          <small>${escapeHtml(user.addressProofType)} · Archivo registrado: ${escapeHtml(user.addressProof)}</small>
+          <small>${escapeHtml(user.addressProofType)} · Comprobante: ${user.hasAddressProof ? "disponible" : "no cargado"}</small>
         </div>
         <div class="row-actions">
+          ${renderDocumentDownload(user, "addressProof", "comprobante")}
+          ${renderDocumentDownload(user, "photo", "fotografía")}
           <button class="primary" type="button" data-action="approve-user" data-id="${escapeHtml(user.id)}">Aprobar</button>
         </div>
       </article>`).join("") : emptyState("No hay solicitudes pendientes");
@@ -366,7 +376,7 @@ async function loadUsers(offset = paginationState.users.offset) {
     const data = await graphqlRequest(`
       query UsersPage($limit: Int, $offset: Int, $query: String) {
         users(limit: $limit, offset: $offset, query: $query) {
-          id fullName email libraryNumber status
+          id fullName email libraryNumber status hasAddressProof hasPhoto
         }
         userCount(query: $query)
       }`, { limit: DIRECTORY_PAGE_SIZE, offset: state.offset, query: state.query });
@@ -470,7 +480,7 @@ function openEditDialog(kind, id) {
   form.dataset.recordId = id;
   document.getElementById("editDialogTitle").textContent = `Editar ${entityConfig[kind].title}`;
   document.getElementById("editDialogNote").hidden = kind !== "users";
-  document.getElementById("editDialogNote").textContent = "Los campos de comprobante y fotografía guardan nombres de archivo; esta versión no carga el contenido de documentos.";
+  document.getElementById("editDialogNote").textContent = "Los documentos adjuntos se almacenan de forma privada y solo los administradores autenticados pueden descargarlos.";
   fields.replaceChildren(...editFields[kind].map(field => createField(field, record[field.name])));
   dialog.showModal();
   fields.querySelector("input, select")?.focus();
@@ -552,23 +562,18 @@ document.getElementById("userForm").addEventListener("submit", async event => {
   event.preventDefault();
   const form = event.currentTarget;
   const formData = new FormData(form);
-  const input = Object.fromEntries(formData);
-  input.addressProof = formData.get("addressProof")?.name || "";
-  input.photo = formData.get("photo")?.name || "";
-  if (!input.addressProof) {
-    showToast("Selecciona el archivo del comprobante para registrar su nombre.", "error");
+  if (!form.elements.addressProof.files.length) {
+    showToast("Adjunta el archivo del comprobante de identificación.", "error");
     return;
   }
+  if (!form.elements.photo.files.length) formData.delete("photo");
   setFormBusy(form, true, "Registrando…");
   try {
-    const data = await graphqlRequest(`
-      mutation CreateUser($input: UserInput!) {
-        createUser(input: $input) {
-          id fullName address postalCode phone email occupation workplace status credentialNumber
-        }
-      }`, { input });
+    const response = await fetch("/api/users", { method: "POST", body: formData });
+    const user = await response.json();
+    if (!response.ok) throw new Error(user.error || "No fue posible registrar la solicitud.");
     form.reset();
-    renderCredential(data.createUser);
+    renderCredential(user);
     await Promise.all([loadPendingUsers(), loadUsers()]);
     showToast("Solicitud de usuario registrada.");
   } catch (error) {
@@ -737,11 +742,14 @@ async function loadLoanSuggestions() {
   try {
     const [bookData, userData] = await Promise.all([
       graphqlRequest(`query BookSuggestions { books(limit: 100) { title } }`),
-      graphqlRequest(`query UserSuggestions { users(limit: 100) { libraryNumber } }`)
+      graphqlRequest(`query UserSuggestions { users(limit: 100) { libraryNumber status } }`)
     ]);
     document.getElementById("bookSuggestions").innerHTML = bookData.books
       .map(book => `<option value="${escapeHtml(book.title)}"></option>`).join("");
-    document.getElementById("userSuggestions").innerHTML = [...new Set(userData.users.map(user => user.libraryNumber).filter(Boolean))]
+    document.getElementById("userSuggestions").innerHTML = [...new Set(userData.users
+      .filter(user => user.status === "approved")
+      .map(user => user.libraryNumber)
+      .filter(Boolean))]
       .map(number => `<option value="${escapeHtml(number)}"></option>`).join("");
   } catch (error) {
     showToast(`No se pudieron cargar sugerencias: ${error.message}`, "error");
@@ -749,51 +757,32 @@ async function loadLoanSuggestions() {
 }
 
 async function refreshAuthStatus() {
-  const response = await fetch("/api/auth/status");
+  let response;
+  try {
+    response = await fetch("/api/auth/status");
+  } catch {
+    throw new Error("No se pudo conectar con el servidor para verificar la sesión.");
+  }
   if (!response.ok) throw new Error("No se pudo verificar la sesión.");
   const status = await response.json();
   const button = document.getElementById("logoutButton");
-  button.textContent = status.ok ? `Salir · ${status.username}` : "Iniciar sesión";
-  button.setAttribute("aria-label", status.ok ? `Cerrar sesión de ${status.username}` : "Iniciar sesión de administrador");
-  if (!status.ok && !loginDialog.open) loginDialog.showModal();
+  button.textContent = `Cerrar sesión · ${status.username}`;
+  button.setAttribute("aria-label", `Cerrar sesión de ${status.username}`);
   return status;
 }
-
-const loginDialog = document.getElementById("loginDialog");
-document.getElementById("loginForm").addEventListener("submit", async event => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const credentials = Object.fromEntries(new FormData(form));
-  setFormBusy(form, true, "Verificando…");
-  try {
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(credentials)
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "No fue posible iniciar sesión.");
-    if (data.token) localStorage.setItem("biblioteca_token", data.token);
-    form.reset();
-    loginDialog.close();
-    await refreshAuthStatus();
-    showToast("Sesión iniciada.");
-  } catch (error) {
-    showToast(error.message, "error");
-  } finally {
-    setFormBusy(form, false);
-  }
-});
 
 document.getElementById("logoutButton").addEventListener("click", async () => {
   try {
     const status = await refreshAuthStatus();
-    if (!status.ok) return;
-    const response = await fetch("/api/auth/logout", { method: "POST" });
+    if (!status.ok) return window.location.replace("/login");
+    let response;
+    try {
+      response = await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      throw new Error("No se pudo conectar con el servidor para cerrar la sesión.");
+    }
     if (!response.ok) throw new Error("No fue posible cerrar la sesión.");
-    localStorage.removeItem("biblioteca_token");
-    await refreshAuthStatus();
-    showToast("Sesión cerrada.");
+    window.location.replace("/login");
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -810,17 +799,22 @@ document.getElementById("editFields").addEventListener("change", event => {
   }
 });
 
-function initialize() {
-  renderComplexQueryGroups();
-  loadCatalog().catch(error => showToast(error.message, "error"));
-  loadPendingUsers().catch(error => showToast(error.message, "error"));
-  loadUsers().catch(error => showToast(error.message, "error"));
-  loadLoans().catch(error => showToast(error.message, "error"));
-  loadLoanSuggestions();
-  refreshAuthStatus().catch(error => {
+async function initialize() {
+  try {
+    const status = await refreshAuthStatus();
+    if (!status.ok) return window.location.replace("/login");
+  } catch (error) {
     showToast(error.message, "error");
-    if (!loginDialog.open) loginDialog.showModal();
-  });
+    return;
+  }
+  renderComplexQueryGroups();
+  await Promise.all([
+    loadCatalog(),
+    loadPendingUsers(),
+    loadUsers(),
+    loadLoans(),
+    loadLoanSuggestions()
+  ].map(task => task.catch(error => showToast(error.message, "error"))));
 }
 
 initialize();

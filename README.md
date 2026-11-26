@@ -20,12 +20,13 @@ Aplicación web académica para consultar y administrar el catálogo, los usuari
 
 - **Catálogo:** búsqueda por título, autor o clasificador; creación, edición y eliminación de libros.
 - **Usuarios:** registro de solicitudes, revisión y aprobación administrativa, administración de registros y credencial digital.
-- **Préstamos:** registro y administración de solicitudes y estados de préstamo.
+- **Documentos de usuario:** carga del comprobante de identificación (PDF/JPG/PNG) y fotografía opcional (JPG/PNG), hasta 5 MB por archivo. Se almacenan en GridFS privado de MongoDB Atlas; solo administradores autenticados pueden descargarlos y se eliminan al borrar el perfil.
+- **Préstamos:** registro y administración de préstamos; el servidor valida que el libro exista y tenga ejemplares disponibles, y que la persona tenga una credencial aprobada.
 - **Consultas complejas:** 30 consultas de agregación MongoDB, organizadas en tres grupos de 10.
-- **Autenticación administrativa:** protege las mutaciones de administración.
+- **Autenticación administrativa:** login separado; protege la aplicación, las consultas privadas y las operaciones de administración.
 - **Interfaz adaptable:** navegación para móvil y escritorio, resultados paginados, búsqueda y formularios de edición completos.
 
-> **Alcance de documentos de usuario:** la interfaz registra el nombre del archivo seleccionado para comprobante o fotografía, pero esta versión no carga ni almacena el contenido de esos archivos.
+> Los archivos antiguos registrados únicamente como nombres no se pueden recuperar ni descargar. Las nuevas solicitudes sí cargan el contenido y lo guardan en GridFS.
 
 ## Tecnologías y arquitectura
 
@@ -36,6 +37,7 @@ Aplicación web académica para consultar y administrar el catálogo, los usuari
 | API | Apollo Server y GraphQL |
 | Base de datos | MongoDB Atlas |
 | Acceso a MongoDB | MongoDB Node.js Driver |
+| Archivos privados | MongoDB GridFS |
 | Hosting | Render |
 
 ```mermaid
@@ -43,15 +45,19 @@ flowchart LR
     Browser["Navegador<br/>HTML / CSS / JavaScript"]
     API["Express + Apollo Server<br/>GraphQL: POST /graphql"]
     DB["MongoDB Atlas<br/>biblioteca_alameda"]
+    Files["GridFS<br/>userDocuments"]
     Render["Render<br/>hosting del servicio web"]
 
     Browser -->|fetch| API
     API -->|MongoDB Driver| DB
+    API -->|GridFS| Files
     Render -. aloja .-> API
     Render -. sirve .-> Browser
 ```
 
 La aplicación utiliza una base documental: los registros se almacenan en documentos agrupados en colecciones. GraphQL/Apollo constituyen la API; no son la base de datos.
+
+El alta de usuarios se envía como `multipart/form-data` a `POST /api/users`; la sesión administrativa es obligatoria. El contenido se valida por extensión, MIME declarado y firma inicial, y se almacena en el bucket `userDocuments`. La descarga requiere autenticación mediante `GET /api/users/:id/documents/:documentType`; no hay enlaces públicos ni IDs GridFS expuestos en GraphQL. Los archivos se eliminan al borrar el perfil. La validación de firma no sustituye un análisis antimalware.
 
 ## Requisitos
 
@@ -85,13 +91,16 @@ La aplicación utiliza una base documental: los registros se almacenan en docume
    npm start
    ```
 
-5. Abre `http://localhost:3000`.
+5. Abre `http://localhost:3000`; el acceso administrativo te redirige a la pantalla de inicio de sesión.
+
+La consulta GraphQL del catálogo de libros puede hacerse sin iniciar sesión; la interfaz administrativa, los datos de usuarios/préstamos, las estadísticas y las demás operaciones administrativas requieren una sesión.
 
 ## Administración de cuentas
 
 Las operaciones administrativas requieren iniciar sesión. Para crear o actualizar una cuenta administrativa, ejecuta `npm run admin:create` con `MONGODB_URI`, `MONGODB_DATABASE`, `ADMIN_USERNAME` y `ADMIN_PASSWORD` disponibles en el entorno local.
 
 - El script almacena un hash bcrypt de la contraseña, no la contraseña en texto plano.
+- La sesión se mantiene mediante una cookie `HttpOnly`; el token no se guarda en `localStorage` ni se devuelve al navegador en el cuerpo de login.
 - Define el usuario y la contraseña de forma privada y temporal; no los incluyas en el repositorio, README, capturas ni historial compartido.
 - En Render, configura `MONGODB_URI` y `SESSION_SECRET` como variables privadas del servicio. `render.yaml` genera el secreto de sesión; no contiene credenciales de MongoDB.
 
@@ -153,7 +162,7 @@ Ejecuta la suite automatizada con:
 npm test
 ```
 
-Las pruebas cubren la consulta del catálogo, el rechazo de rutas REST antiguas, la protección de mutaciones administrativas y la presencia de las 30 consultas en el esquema GraphQL. Esto no implica que las 30 consultas complejas hayan sido probadas individualmente contra MongoDB Atlas.
+Las pruebas cubren el catálogo, la protección de lecturas privadas, el login y cierre de sesión, el uso de la cookie administrativa, la ruta de preparación de Render, rutas REST antiguas y la presencia de las 30 consultas en el esquema GraphQL. Esto no implica que las 30 agregaciones hayan sido probadas individualmente contra MongoDB Atlas.
 
 ## API y estado del servicio
 
@@ -165,9 +174,9 @@ Servicio desplegado reportado:
 - Estado de MongoDB: `/api/mongo/status`
 - Estado de autenticación: `/api/auth/status`
 
-La disponibilidad del servicio puede variar. Comprueba los endpoints antes de utilizarlos en una demostración.
+`/health` informa si el proceso está activo. `/api/mongo/status` funciona como comprobación de preparación y devuelve HTTP 503 si MongoDB no está conectado. La disponibilidad del servicio puede variar; comprueba los endpoints antes de una demostración.
 
-El catálogo, el directorio de usuarios y los préstamos incluyen búsqueda y paginación en la interfaz. Las mutaciones administrativas requieren una sesión válida. Para crear préstamos con usuarios aprobados, utiliza el número de biblioteca asignado al aprobar la solicitud.
+El catálogo, el directorio de usuarios y los préstamos incluyen búsqueda y paginación en la interfaz. Las operaciones administrativas requieren una sesión válida. Para crear préstamos, utiliza el título del catálogo y el número de biblioteca de un usuario aprobado; el servidor vuelve a validar el inventario antes de registrar la operación.
 
 ## Despliegue
 
@@ -178,6 +187,7 @@ La configuración de Render está descrita en `render.yaml`:
 - Node.js: 22
 - Base de datos: configurar `MONGODB_URI` y `MONGODB_DATABASE` como variables de entorno.
 - Seguridad: `SESSION_SECRET` se genera en la configuración de Render.
+- Entorno: `NODE_ENV=production` para exigir cookies `Secure`.
 
 No escribas valores privados en `render.yaml` ni en archivos versionados.
 

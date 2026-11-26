@@ -110,12 +110,12 @@
               <label>Comprobante requerido
                 <select name="addressProofType" required><option value="INE">INE</option></select>
               </label>
-              <label>Nombre del archivo de comprobante
-                <input name="addressProof" type="file" accept=".pdf,image/jpeg,image/png" required>
+              <label class="field-wide">Archivo del comprobante de identificación (PDF, JPG o PNG; máximo 5 MB)
+                <input name="addressProof" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required>
               </label>
-              <p class="field-note field-wide">La aplicación registra el nombre del archivo seleccionado; actualmente no almacena ni transmite el contenido del documento.</p>
-              <label class="field-wide">Fotografía (opcional)
-                <input name="photo" type="file" accept="image/*">
+              <p class="field-note field-wide">Los archivos se guardan en MongoDB Atlas GridFS con acceso privado. Solo administradores autenticados pueden descargarlos; se eliminan al borrar el perfil.</p>
+              <label class="field-wide">Fotografía (opcional; JPG o PNG, máximo 5 MB)
+                <input name="photo" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
               </label>
               <label class="field-wide">Contacto de emergencia (opcional) <input name="emergencyContact" maxlength="160"></label>
             </div>
@@ -157,7 +157,7 @@
           <div>
             <p class="eyebrow">Circulación</p>
             <h2>Préstamos</h2>
-            <p>Registra una solicitud y da seguimiento a sus fechas y estado.</p>
+            <p>Registra préstamos de libros del catálogo para usuarios con credencial aprobada.</p>
           </div>
         </div>
         <form class="card form-card loan-form" id="loanForm">
@@ -170,7 +170,7 @@
             <label class="field-wide">Número de biblioteca <input name="libraryNumber" list="userSuggestions" maxlength="80" placeholder="Ej. BA-00125" required></label>
             <datalist id="userSuggestions"></datalist>
           </div>
-          <p class="field-note">Las sugerencias se basan en los registros cargados; también puedes introducir el dato manualmente.</p>
+          <p class="field-note">Puedes escribir los datos o elegir una sugerencia. El servidor valida el libro, el stock disponible y que el usuario tenga una credencial aprobada.</p>
           <div class="form-actions"><button class="primary" type="submit">Crear préstamo</button></div>
         </form>
         <div id="loanResult" class="notice" role="status" aria-live="polite"></div>
@@ -230,18 +230,6 @@
       <div id="editFields" class="form-grid form-grid-two"></div>
       <p id="editDialogNote" class="field-note" hidden></p>
       <div class="dialog-actions"><button class="secondary" type="button" data-close-dialog>Cancelar</button><button class="primary" type="submit">Guardar cambios</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="loginDialog" class="app-dialog login-dialog">
-    <form id="loginForm" class="card dialog-card login-card">
-      <div class="brand login-brand"><span class="brand-mark">BA</span><span class="brand-name"><strong>Biblioteca</strong><small>Alameda</small></span></div>
-      <p class="eyebrow">Acceso administrativo</p>
-      <h2>Iniciar sesión</h2>
-      <p class="muted">Accede para administrar el catálogo, los usuarios y los préstamos.</p>
-      <label>Usuario <input name="username" autocomplete="username" required></label>
-      <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
-      <div class="dialog-actions"><button class="primary" type="submit">Ingresar</button></div>
     </form>
   </dialog>
 

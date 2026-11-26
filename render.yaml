@@ -11,5 +11,7 @@ services:
         value: 22
       - key: MONGODB_DATABASE
         value: biblioteca_alameda
+      - key: NODE_ENV
+        value: production
       - key: SESSION_SECRET
         generateValue: true
